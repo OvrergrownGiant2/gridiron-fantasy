@@ -1,0 +1,25 @@
+{
+  "name": "gridiron",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/core",
+    "packages/server",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @gridiron/server & npm run dev -w @gridiron/web",
+    "build": "npm run build -w @gridiron/web",
+    "build:demo": "npm run build:demo -w @gridiron/web",
+    "test": "npm run test -w @gridiron/core && npm run test -w @gridiron/server",
+    "typecheck": "tsc -p packages/core && tsc -p packages/server && tsc -p packages/web --noEmit",
+    "db:migrate": "npm run db:migrate -w @gridiron/server",
+    "db:seed": "npm run db:seed -w @gridiron/server",
+    "start": "npm run start -w @gridiron/server",
+    "test:pglite": "npm run test -w @gridiron/core && TEST_DRIVER=pglite npm run test -w @gridiron/server",
+    "test:e2e": "python3 e2e/smoke.py http://localhost:8787 e2e/screenshots",
+    "build:artifact": "npm run build:demo -w @gridiron/web && node scripts/build-artifact.mjs",
+    "refresh:data": "tsx packages/server/scripts/build-nflverse-snapshot.ts \"$NFL_SEASON\" packages/web/public-demo/nfl-snapshot.json",
+    "refresh:artifact": "npm run refresh:data && npm run build:artifact"
+  }
+}
