@@ -2,7 +2,7 @@ import { STAT_LABELS } from '@gridiron/core';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { kickoff, pts } from '../lib/format';
 import { useCall } from '../lib/hooks';
-import { PlayerCardPanel, PlayerPhoto } from './PlayerCard';
+import { PlayerCardPanel, PlayerHover, PlayerPhoto } from './PlayerCard';
 import { Badge, InjuryTag, LoadingBlock, Modal, cx } from './ui';
 
 const Ctx = createContext<(leagueId: string, playerId: string) => void>(() => {});
@@ -102,9 +102,11 @@ function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: st
 export function PlayerName({ leagueId, id, name, injury, className, position, team, photo = true, photoSize = 26 }: { leagueId: string; id: string; name: string; injury?: string; className?: string; position?: string; team?: string | null; photo?: boolean; photoSize?: number }) {
   const open = useOpenPlayer();
   return (
+    <PlayerHover playerId={id}>
     <button type="button" onClick={() => open(leagueId, id)} className={cx('inline-flex max-w-full items-center gap-1.5 text-left font-semibold hover:text-accent hover:underline', className)}>
       {photo && <PlayerPhoto id={id} name={name} position={position ?? (id.includes('DST-') ? 'DST' : undefined)} team={team ?? (id.includes('DST-') ? id.split('DST-')[1] : null)} size={photoSize} className="mr-0.5" />}
       <span className="truncate">{name}</span>{injury && <InjuryTag status={injury} />}
     </button>
+    </PlayerHover>
   );
 }

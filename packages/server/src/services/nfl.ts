@@ -199,11 +199,17 @@ export async function runSync(app: App, opts: { force?: boolean } = {}): Promise
     const prevSeason = await seasonOf(app.db);
     const ref = await app.db.one<{ last_success_at: string | null }>("SELECT last_success_at FROM provider_sync_state WHERE key = 'reference'");
     const refAge = ref?.last_success_at ? now.getTime() - Date.parse(ref.last_success_at) : Infinity;
-    if (refAge > 15 * 60_000 || prevSeason !== cs.season) {
+    // Re-sync players right away when a newer data snapshot arrived, or when players are missing
+    // photos/ratings (a database created before profiles existed).
+    const asOf = p.snapshotAsOf ?? null;
+    const seenAsOf = asOf ? (await app.db.one<{ value: { asOf: string } }>("SELECT value FROM app_kv WHERE key = 'reference_asof'"))?.value?.asOf ?? null : null;
+    const missingProfiles = p.id.startsWith('nflverse') && Boolean(await app.db.one("SELECT 1 FROM nfl_players WHERE active AND provider = 'nflverse' AND profile IS NULL LIMIT 1"));
+    if (refAge > 15 * 60_000 || prevSeason !== cs.season || (asOf && asOf !== seenAsOf) || missingProfiles) {
       await syncReference(app);
       await upsertGames(app.db, await p.schedule(cs.season));
       await app.db.query(`INSERT INTO app_kv (key, value) VALUES ('nfl_season', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [JSON.stringify({ season: cs.season })]);
       await setSyncState(app.db, 'reference', p.id, { ok: true, now, nextRunAt: new Date(now.getTime() + 15 * 60_000) });
+      if (asOf) await app.db.query(`INSERT INTO app_kv (key, value) VALUES ('reference_asof', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [JSON.stringify({ asOf })]);
     }
     const dbWeek = await currentNflWeek(app.db, cs.season);
     // Also refresh the previous week so late corrections are picked up. On the first sync

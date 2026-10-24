@@ -323,6 +323,57 @@ describe('template drafts: you pick every player', () => {
   });
 });
 
+describe('leaving and deleting leagues', () => {
+  it('a person who leaves is replaced by an AI manager; their offers are cancelled; the last one out deletes the league', async () => {
+    setTime(ctx, '2026-09-01T12:00:00Z');
+    const boss = await mkUser(ctx.app), pal = await mkUser(ctx.app);
+    const l = await soloLeague(boss, { name: 'Leavers', teamCount: 3, aiTeams: 1 });
+    await leagues.joinLeague(ctx.app, pal.actor, { inviteCode: l.inviteCode, teamName: 'Pal FC' });
+    await drafts.autoDraftAll(ctx.app, boss.actor, { leagueId: l.id });
+    const bossTeam = (await leagues.leagueDetail(ctx.app, boss.actor, { leagueId: l.id })).myTeamId!;
+    const palTeam = (await leagues.leagueDetail(ctx.app, pal.actor, { leagueId: l.id })).myTeamId!;
+    const give = (await ctx.app.db.one<{ player_id: string }>('SELECT player_id FROM roster_entries WHERE team_id = $1 LIMIT 1', [palTeam]))!.player_id;
+    const get = (await ctx.app.db.one<{ player_id: string }>('SELECT player_id FROM roster_entries WHERE team_id = $1 LIMIT 1', [bossTeam]))!.player_id;
+    const offer = await trades.proposeTrade(ctx.app, pal.actor, { fromTeamId: palTeam, toTeamId: bossTeam, assets: [
+      { type: 'player', fromTeamId: palTeam, toTeamId: bossTeam, playerId: give }, { type: 'player', fromTeamId: bossTeam, toTeamId: palTeam, playerId: get }] });
+
+    const r1 = await leagues.leaveLeague(ctx.app, pal.actor, { leagueId: l.id });
+    expect(r1).toMatchObject({ leagueDeleted: false, newCommissionerId: null });
+    const t = await ctx.app.db.one<any>('SELECT is_ai, owner_user_id, ai_difficulty FROM teams WHERE id = $1', [palTeam]);
+    expect(t).toMatchObject({ is_ai: true, owner_user_id: null, ai_difficulty: 'medium' });
+    expect((await ctx.app.db.one<any>('SELECT status FROM trades WHERE id = $1', [offer.tradeId]))!.status).toBe('canceled');
+    expect((await ctx.app.db.one<{ c: number }>('SELECT count(*)::int AS c FROM roster_entries WHERE team_id = $1', [palTeam]))!.c).toBe(15); // roster kept
+    await expectError(leagues.leagueDetail(ctx.app, pal.actor, { leagueId: l.id }), 404); // private leagues are hidden from non-members
+
+    const r2 = await leagues.leaveLeague(ctx.app, boss.actor, { leagueId: l.id });
+    expect(r2.leagueDeleted).toBe(true);
+    expect(await ctx.app.db.one('SELECT id FROM leagues WHERE id = $1', [l.id])).toBeNull();
+    // the history survives, detached from the deleted league
+    const trail = await ctx.app.db.query<{ action: string }>("SELECT action FROM audit_log WHERE target = $1 OR payload->>'teamId' = $2", [l.id, palTeam]);
+    expect(trail.map((x) => x.action)).toEqual(expect.arrayContaining(['league.delete', 'member.leave']));
+    await expect(ctx.app.db.query("UPDATE audit_log SET action = 'x' WHERE target = $1", [l.id])).rejects.toThrow(/append-only/);
+  });
+
+  it('a commissioner who leaves hands the league to the next person; only the commissioner can delete it', async () => {
+    setTime(ctx, '2026-09-01T12:00:00Z');
+    const boss = await mkUser(ctx.app), pal = await mkUser(ctx.app);
+    const l = await soloLeague(boss, { name: 'Handover', teamCount: 3, aiTeams: 0 });
+    await leagues.joinLeague(ctx.app, pal.actor, { inviteCode: l.inviteCode });
+    const r = await leagues.leaveLeague(ctx.app, boss.actor, { leagueId: l.id });
+    expect(r.newCommissionerId).toBe(pal.userId);
+    const d = await leagues.leagueDetail(ctx.app, pal.actor, { leagueId: l.id });
+    expect(d.role).toBe('commissioner');
+    expect(d.league.createdBy).toBe(pal.userId);
+    expect(d.teams.find((x: any) => x.owner_user_id === null)?.is_ai).toBe(true); // the old seat is AI-run
+    const other = await mkUser(ctx.app);
+    await leagues.joinLeague(ctx.app, other.actor, { inviteCode: l.inviteCode });
+    await expectError(leagues.deleteLeague(ctx.app, other.actor, { leagueId: l.id, confirmName: 'Handover' }), 403);
+    await expectError(leagues.deleteLeague(ctx.app, pal.actor, { leagueId: l.id, confirmName: 'wrong' }), 400);
+    await leagues.deleteLeague(ctx.app, pal.actor, { leagueId: l.id, confirmName: 'Handover' });
+    expect(await ctx.app.db.one('SELECT id FROM leagues WHERE id = $1', [l.id])).toBeNull();
+  });
+});
+
 describe('11, 18, 19. acquisitions, waivers and race conditions', () => {
   it('simultaneous free-agent adds of the same player roster him exactly once; requests are idempotent', async () => {
     setTime(ctx, '2026-09-16T12:00:00Z'); // Wednesday of week 2, no games started

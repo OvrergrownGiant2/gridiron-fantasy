@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Avatar } from '../components/Shell';
 import { RefreshLeagueButton } from '../components/RefreshLeague';
+import { LeagueExitButtons } from '../components/LeagueExit';
 import { TeamLogo, TeamStripe } from '../components/team';
 import { Badge, Button, Card, ConfirmDialog, Empty, LoadingBlock, PageHeader, SectionTitle, Tabs, cx, useToast } from '../components/ui';
 import { pts, relative } from '../lib/format';
@@ -107,8 +108,6 @@ function Activity({ leagueId }: { leagueId: string }) {
 function Members({ L }: { L: any }) {
   const toast = useToast();
   const nav = useNavigate();
-  const [leaving, setLeaving] = useState(false);
-  const leave = useAction('leagues.leave', { invalidate: ['league', 'dashboard'], success: 'You left the league.', onSuccess: () => nav('/leagues') });
   const teamOf = (uid: string) => L.teams.find((t: any) => t.owner_user_id === uid);
   const link = `${location.href.split('#')[0]}#/join/${L.league.inviteCode}`;
   return (
@@ -139,11 +138,11 @@ function Members({ L }: { L: any }) {
             <Button size="sm" className="mt-2 w-full" icon={<Copy className="h-4 w-4" />} onClick={async () => { try { await navigator.clipboard.writeText(link); toast('good', 'Invite link copied.'); } catch { toast('info', 'Copy the link above manually.'); } }}>Copy invite link</Button>
           </Card>
         )}
-        {L.role !== 'commissioner' && <Button variant="ghost" className="w-full text-bad" icon={<LogOut className="h-4 w-4" />} onClick={() => setLeaving(true)}>Leave league</Button>}
+        <Card>
+          <SectionTitle sub="Leaving hands your team to an AI manager. A league with no people left is deleted.">Leave or delete</SectionTitle>
+          <LeagueExitButtons league={{ id: L.league.id, name: L.league.name, role: L.role, people: L.members.filter((m: any) => m.role !== 'observer').length, teamName: L.teams.find((t: any) => t.id === L.myTeamId)?.name }} />
+        </Card>
       </div>
-      <ConfirmDialog open={leaving} onClose={() => setLeaving(false)} danger title="Leave this league?" confirmLabel="Leave league"
-        body={L.league.status === 'setup' ? 'Your team will be removed.' : 'Your team stays in the league and an AI manager takes over so the schedule is not disrupted.'}
-        onConfirm={() => leave.mutateAsync({ leagueId: L.league.id })} />
     </div>
   );
 }

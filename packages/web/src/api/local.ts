@@ -15,6 +15,7 @@ import { DemoProvider } from '@gridiron/server/src/providers/demo';
 import { DatasetProvider, type NflDataset } from '@gridiron/server/src/providers/nflverse';
 import { resolveSession } from '@gridiron/server/src/services/auth';
 import { startJobs } from '@gridiron/server/src/services/jobs';
+import { runSync } from '@gridiron/server/src/services/nfl';
 import { seedDemo } from '@gridiron/server/src/services/seed';
 import { getMedia } from '@gridiron/server/src/services/social';
 import { ApiError, type AppEventMsg, type Transport } from './transport';
@@ -94,6 +95,8 @@ export async function createLocalTransport(onProgress: (msg: string, pct: number
   await restoreDemoClock(app, clock);
   const r = await seedDemo(app, clock, (m, p) => onProgress(m, 5 + Math.round(p * 0.93)));
   startJobs(app);
+  // Pick up a newer published snapshot (and any missing player photos/ratings) right away.
+  if (snapshot && r.skipped) void runSync(app, { force: true }).catch((e) => console.warn('[gridiron] sync on load failed', e));
   onProgress('Ready', 100);
 
   /** A republished page may carry a newer snapshot than the one loaded at boot. */

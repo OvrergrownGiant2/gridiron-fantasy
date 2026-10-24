@@ -177,22 +177,56 @@ export async function joinLeague(app: App, actor: Actor, input: { inviteCode: st
   });
 }
 
+/**
+ * Leave a league. Your team stays in the league, run by an AI manager, so schedules and
+ * standings never break. Your pending trade offers and waiver claims are cancelled.
+ * A commissioner who leaves hands the role to the next person (co-commissioner first, then
+ * the longest-serving manager). When no people are left, the league is deleted.
+ */
 export async function leaveLeague(app: App, actor: Actor, input: { leagueId: string }) {
   const userId = requireUser(actor);
-  return withTx(app, async (db) => {
+  const out = await withTx(app, async (db) => {
     const league = await getLeague(db, input.leagueId, true);
     const role = await roleIn(db, league.id, userId);
     if (!role) throw notFound('League');
-    if (role === 'commissioner') throw badRequest('Transfer the commissioner role before leaving the league.');
     const team = await myTeam(db, league.id, userId);
-    if (team) {
-      if (league.status === 'setup') await db.query('DELETE FROM teams WHERE id = $1', [team.id]);
-      else await db.query("UPDATE teams SET owner_user_id = NULL, is_ai = true, ai_difficulty = 'medium', updated_at = now() WHERE id = $1", [team.id]);
-    }
+    const u = await db.one<{ display_name: string }>('SELECT display_name FROM users WHERE id = $1', [userId]);
+    if (team) await handTeamToAi(db, team.id);
     await db.query('DELETE FROM league_members WHERE league_id = $1 AND user_id = $2', [league.id, userId]);
-    await activity(app, db, league.id, 'member_left', `A manager left the league${team && league.status !== 'setup' ? '; their team is now AI-managed' : ''}.`);
-    return { ok: true };
+    await audit(db, { leagueId: league.id, actor, action: 'member.leave', target: userId, payload: { teamId: team?.id ?? null } });
+    const people = await db.query<{ user_id: string; role: Role }>(
+      "SELECT user_id, role FROM league_members WHERE league_id = $1 AND role <> 'observer' ORDER BY (role = 'co_commissioner') DESC, joined_at, user_id", [league.id]);
+    if (people.length === 0) {
+      await audit(db, { leagueId: null, actor, action: 'league.delete', target: league.id, payload: { name: league.name, reason: 'Last person left the league' } });
+      await db.query('DELETE FROM leagues WHERE id = $1', [league.id]);
+      return { ok: true, leagueDeleted: true, newCommissionerId: null as string | null };
+    }
+    let newCommissionerId: string | null = null;
+    if (role === 'commissioner') {
+      newCommissionerId = people[0].user_id;
+      await db.query("UPDATE league_members SET role = 'commissioner' WHERE league_id = $1 AND user_id = $2", [league.id, newCommissionerId]);
+      // The creator-only tools (like Refresh league) follow the commissioner role.
+      await db.query('UPDATE leagues SET created_by = $2 WHERE id = $1', [league.id, newCommissionerId]);
+      await audit(db, { leagueId: league.id, actor, action: 'commissioner.transfer', target: newCommissionerId, reason: 'Previous commissioner left the league' });
+    }
+    const who = u?.display_name ?? 'A manager';
+    await activity(app, db, league.id, 'member_left', `${who} left the league${team ? '; an AI manager now runs their team' : ''}.`);
+    if (newCommissionerId) {
+      const nu = await db.one<{ display_name: string }>('SELECT display_name FROM users WHERE id = $1', [newCommissionerId]);
+      await activity(app, db, league.id, 'commissioner_changed', `${nu?.display_name ?? 'A manager'} is now the commissioner.`);
+    }
+    return { ok: true, leagueDeleted: false, newCommissionerId };
   });
+  if (!out.leagueDeleted) app.bus.publish(`league:${input.leagueId}`, { type: 'league', leagueId: input.leagueId });
+  return out;
+}
+
+/** An AI manager takes over the team; the person's pending offers, claims and queue are cancelled. */
+async function handTeamToAi(db: Db, teamId: string) {
+  await db.query("UPDATE teams SET owner_user_id = NULL, is_ai = true, ai_difficulty = COALESCE(ai_difficulty, 'medium'), updated_at = now() WHERE id = $1", [teamId]);
+  await db.query("UPDATE trades SET status = 'canceled', decided_at = now() WHERE status IN ('proposed','countered') AND proposer_team_id = $1", [teamId]);
+  await db.query("UPDATE waiver_claims SET status = 'canceled' WHERE status = 'pending' AND team_id = $1", [teamId]);
+  await db.query('DELETE FROM draft_queue WHERE team_id = $1', [teamId]);
 }
 
 export async function listMyLeagues(app: App, actor: Actor) {
@@ -201,6 +235,7 @@ export async function listMyLeagues(app: App, actor: Actor) {
     `SELECT l.id, l.name, l.status, l.season, l.current_week, l.max_teams, l.logo_media_id, l.visibility, l.created_by = $1 AS is_creator,
             m.role, t.id AS team_id, t.name AS team_name, t.abbrev, t.primary_color, t.secondary_color, t.logo_media_id AS team_logo_media_id, t.logo_preset,
             (SELECT count(*)::int FROM teams x WHERE x.league_id = l.id) AS team_count,
+            (SELECT count(*)::int FROM league_members x WHERE x.league_id = l.id AND x.role <> 'observer') AS people,
             (SELECT count(*)::int FROM notifications n WHERE n.user_id = $1 AND n.league_id = l.id AND n.read_at IS NULL) AS unread,
             (SELECT count(*)::int FROM trades tr WHERE tr.league_id = l.id AND tr.status = 'proposed' AND tr.recipient_team_id = t.id) AS pending_offers,
             (SELECT count(*)::int FROM waiver_claims c WHERE c.team_id = t.id AND c.status = 'pending') AS pending_claims
@@ -392,10 +427,8 @@ export async function removeMember(app: App, actor: Actor, input: { leagueId: st
     if (target === 'co_commissioner' && myRole !== 'commissioner') throw forbidden('Only the commissioner can remove a co-commissioner.');
     const league = await getLeague(db, input.leagueId, true);
     const team = await myTeam(db, input.leagueId, input.userId);
-    if (team) {
-      if (league.status === 'setup') await db.query('DELETE FROM teams WHERE id = $1', [team.id]);
-      else await db.query("UPDATE teams SET owner_user_id = NULL, is_ai = true, ai_difficulty = 'medium' WHERE id = $1", [team.id]);
-    }
+    if (team) await handTeamToAi(db, team.id);
+    void league;
     await db.query('DELETE FROM league_members WHERE league_id = $1 AND user_id = $2', [input.leagueId, input.userId]);
     await audit(db, { leagueId: input.leagueId, actor, action: 'member.remove', target: input.userId, reason: input.reason });
     await activity(app, db, input.leagueId, 'member_removed', 'A member was removed by the commissioner.');

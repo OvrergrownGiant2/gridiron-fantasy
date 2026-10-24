@@ -20,6 +20,7 @@
     "test:e2e": "python3 e2e/smoke.py http://localhost:8787 e2e/screenshots",
     "build:artifact": "npm run build:demo -w @gridiron/web && node scripts/build-artifact.mjs",
     "refresh:data": "tsx packages/server/scripts/build-nflverse-snapshot.ts \"$NFL_SEASON\" packages/web/public-demo/nfl-snapshot.json",
-    "refresh:artifact": "npm run refresh:data && npm run build:artifact"
+    "refresh:artifact": "npm run refresh:data && npm run build:artifact",
+    "fetch:headshots": "node scripts/fetch-headshots.mjs"
   }
 }

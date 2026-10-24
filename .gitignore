@@ -5,3 +5,4 @@ dist-demo
 *.log
 artifact-build
 e2e/screenshots
+packages/web/public-demo/headshots

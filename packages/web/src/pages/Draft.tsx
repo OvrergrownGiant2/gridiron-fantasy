@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { OvrBadge, PlayerCardPanel, PlayerPhoto, TopAttrs, usePlayerMeta } from '../components/PlayerCard';
+import { OvrBadge, PlayerCardPanel, PlayerHover, PlayerPhoto, TopAttrs, usePlayerMeta } from '../components/PlayerCard';
 import { InjuryTag, Modal } from '../components/ui';
 import { TeamChip, TeamLogo } from '../components/team';
 import { Badge, Button, Card, ConfirmDialog, Empty, ErrorNote, Field, Input, LoadingBlock, PageHeader, SectionTitle, Segmented, Select, Tabs, cx, useToast } from '../components/ui';
@@ -231,9 +231,9 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
                   <div key={p.id} role="option" aria-selected={on} tabIndex={0} onClick={() => choose(p)} onKeyDown={(e) => { if (e.key === 'Enter') choose(p); }}
                     className={cx('flex cursor-pointer items-center gap-2.5 border-b border-line px-3 py-2 transition last:border-0 hover:bg-raised sm:gap-3', on && 'bg-raised shadow-[inset_3px_0_0_rgb(var(--accent))]')}>
                     <span className="num hidden w-7 text-right text-[12px] text-faint sm:block">{p.rank}</span>
-                    <PlayerPhoto id={p.id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={40} src={p.profile?.headshot ?? null} />
+                    <PlayerHover playerId={p.id} disabled={on}><PlayerPhoto id={p.id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={40} src={p.profile?.headshot ?? null} /></PlayerHover>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5"><span className="truncate font-semibold">{p.full_name}</span>{p.injury_status && p.injury_status !== 'healthy' && <InjuryTag status={p.injury_status} />}</div>
+                      <div className="flex items-center gap-1.5"><PlayerHover playerId={p.id} disabled={on}><span className="truncate font-semibold">{p.full_name}</span></PlayerHover>{p.injury_status && p.injury_status !== 'healthy' && <InjuryTag status={p.injury_status} />}</div>
                       <div className="flex items-center gap-2 text-[12px] text-muted"><span className="shrink-0">{p.position} · {p.nfl_team_id ?? 'FA'}</span>
                         <span className="hidden truncate text-faint md:inline">{line.slice(1, 4).map((x: any) => `${x.value} ${x.label.toLowerCase()}`).join(' · ')}</span></div>
                     </div>
@@ -252,7 +252,7 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
               <div className="label border-b border-line px-3 py-2">Your queue</div>
               {data.queue.length === 0 ? <p className="px-3 py-3 text-[13px] text-muted">Queue players to auto-pick them if your timer runs out.</p> : data.queue.map((x: any, i: number) => (
                 <div key={x.player_id} className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[13px] last:border-0">
-                  <span className="num w-4 text-faint">{i + 1}</span><PlayerPhoto id={x.player_id} name={x.full_name} position={x.position} team={x.nfl_team_id} size={24} /><span className="min-w-0 flex-1 truncate"><b>{x.full_name}</b> <span className="text-muted">{x.position}</span></span>
+                  <span className="num w-4 text-faint">{i + 1}</span><PlayerHover playerId={x.player_id} className="flex-1 items-center gap-2"><PlayerPhoto id={x.player_id} name={x.full_name} position={x.position} team={x.nfl_team_id} size={24} /><span className="min-w-0 flex-1 truncate"><b>{x.full_name}</b> <span className="text-muted">{x.position}</span></span></PlayerHover>
                   <button aria-label="Remove from queue" className="text-faint hover:text-bad" onClick={() => setQueue.mutate({ leagueId: L.league.id, draftId: d.id, playerIds: queueIds.filter((id) => id !== x.player_id) })}><X className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
@@ -262,8 +262,8 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
               {recent.length === 0 ? <p className="px-3 py-3 text-[13px] text-muted">No picks yet.</p> : recent.map((p: any) => (
                 <div key={p.overall} className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[13px] last:border-0 animate-slideUp">
                   <span className="num w-7 text-faint">{p.overall}</span><TeamLogo team={tm.get(p.team_id)} size={20} />
-                  <PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={24} />
-                  <span className="min-w-0 flex-1 truncate"><b>{p.full_name}</b> <span className="text-muted">{p.position}{p.price ? ` · $${p.price}` : ''}</span></span>
+                  <PlayerHover playerId={p.player_id} className="flex-1 items-center gap-2"><PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={24} />
+                  <span className="min-w-0 flex-1 truncate"><b>{p.full_name}</b> <span className="text-muted">{p.position}{p.price ? ` · $${p.price}` : ''}</span></span></PlayerHover>
                   <OvrBadge ovr={meta?.[p.player_id]?.[1]} size="sm" />{p.is_auto && <Badge>auto</Badge>}
                 </div>
               ))}
@@ -278,7 +278,7 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
       {view === 'team' && (
         <Card pad={false}>
           {myPicks.length === 0 ? <p className="p-4 text-[13px] text-muted">You haven't drafted anyone yet.</p> : myPicks.map((p: any) => (
-            <div key={p.overall} className="flex items-center gap-3 border-b border-line px-4 py-2 text-[13px] last:border-0"><span className="num w-14 text-muted">R{p.round}·{p.pick_in_round}</span><PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={32} /><b className="min-w-0 flex-1 truncate">{p.full_name}</b><span className="text-muted">{p.position} · {p.nfl_team_id}</span>{p.price ? <span className="num">${p.price}</span> : null}<OvrBadge ovr={meta?.[p.player_id]?.[1]} size="sm" /></div>
+            <div key={p.overall} className="flex items-center gap-3 border-b border-line px-4 py-2 text-[13px] last:border-0"><span className="num w-14 text-muted">R{p.round}·{p.pick_in_round}</span><PlayerHover playerId={p.player_id} className="flex-1 items-center gap-3"><PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={32} /><b className="min-w-0 flex-1 truncate">{p.full_name}</b></PlayerHover><span className="text-muted">{p.position} · {p.nfl_team_id}</span>{p.price ? <span className="num">${p.price}</span> : null}<OvrBadge ovr={meta?.[p.player_id]?.[1]} size="sm" /></div>
           ))}
         </Card>
       )}
@@ -305,7 +305,7 @@ function Board({ d, picks, tm }: { d: any; picks: any[]; tm: Map<string, any> })
               <td className="num sticky left-0 bg-surface p-2 font-display text-[14px] font-semibold text-muted">R{r + 1}</td>
               {d.order.map((tid: string) => {
                 const p: any = byPick.get(`${r + 1}:${tid}`);
-                return <td key={tid} className="p-1">{p ? <div className={cx('flex items-center gap-1.5 rounded-md px-1.5 py-1', posTone[p.position])}><PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={24} /><div className="min-w-0"><div className="truncate font-semibold">{p.full_name}</div><div className="opacity-70">{p.position} · {p.nfl_team_id}</div></div></div> : <div className="h-[38px] rounded-md bg-sunken" />}</td>;
+                return <td key={tid} className="p-1">{p ? <PlayerHover playerId={p.player_id} className="w-full"><div className={cx('flex w-full items-center gap-1.5 rounded-md px-1.5 py-1', posTone[p.position])}><PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={24} /><div className="min-w-0"><div className="truncate font-semibold">{p.full_name}</div><div className="opacity-70">{p.position} · {p.nfl_team_id}</div></div></div></PlayerHover> : <div className="h-[38px] rounded-md bg-sunken" />}</td>;
               })}
             </tr>
           ))}

@@ -1,7 +1,21 @@
 import { ratingTier, type PlayerProfile } from '@gridiron/core';
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useCall } from '../lib/hooks';
-import { cx } from './ui';
+import { InjuryTag, cx } from './ui';
+
+declare const __LOCAL_HEADSHOTS__: boolean;
+
+/**
+ * Photo sources in order: the copy hosted with the site (downloaded at build time, so it
+ * can't be blocked by the NFL's servers), then the original NFL.com image.
+ */
+export function photoSources(url: string | null): string[] {
+  if (!url) return [];
+  const id = url.split('?')[0].split('/').pop();
+  const local = typeof __LOCAL_HEADSHOTS__ !== 'undefined' && __LOCAL_HEADSHOTS__ && id ? [`headshots/${id}.jpg`] : [];
+  return [...local, url];
+}
 
 /** Position colors shared by photos, rating badges and cards. */
 export const POS_COLOR: Record<string, { from: string; to: string; chip: string }> = {
@@ -27,11 +41,13 @@ const initials = (name: string) => name.replace(/ (Jr\.|Sr\.|II|III|IV|D\/ST)$/i
  */
 export function PlayerPhoto({ id, name, position, team, size = 32, src, className }: { id: string; name: string; position?: string; team?: string | null; size?: number; src?: string | null; className?: string }) {
   const meta = usePlayerMeta();
-  const url = src !== undefined ? src : meta?.[id]?.[0] ?? null;
-  const [broken, setBroken] = useState(false);
+  const url = src ? src : meta?.[id]?.[0] ?? null;
+  const sources = photoSources(url);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => setAttempt(0), [url]);
   const c = POS_COLOR[position ?? ''] ?? POS_COLOR.K;
   const style = { width: size, height: size, background: `linear-gradient(160deg, ${c.from}, ${c.to})` };
-  if (!url || broken || position === 'DST') {
+  if (!sources.length || attempt >= sources.length || position === 'DST' || id.includes('DST-')) {
     return (
       <span aria-hidden className={cx('inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-display font-bold text-white', className)} style={{ ...style, fontSize: Math.max(9, size * 0.36) }}>
         {position === 'DST' ? (team ?? 'D') : initials(name)}
@@ -40,7 +56,7 @@ export function PlayerPhoto({ id, name, position, team, size = 32, src, classNam
   }
   return (
     <span className={cx('inline-block shrink-0 overflow-hidden rounded-full', className)} style={style}>
-      <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" decoding="async" onError={() => setBroken(true)}
+      <img key={sources[attempt]} src={sources[attempt]} alt="" loading="lazy" referrerPolicy="no-referrer" decoding="async" onError={() => setAttempt((a) => a + 1)}
         className="h-full w-full object-cover object-top" style={{ transform: 'scale(1.18) translateY(6%)' }} />
     </span>
   );
@@ -90,9 +106,9 @@ const ft = (inches: number) => `${Math.floor(inches / 12)}'${inches % 12}"`;
  * The Madden-style player card: photo, overall, attribute bars, season line and bio.
  * Ratings are Gridiron's own, computed from real stats — not EA's Madden ratings.
  */
-export function PlayerCardPanel({ player, profile, className, actions }: {
-  player: { id: string; name: string; position: string; nflTeamId: string | null; jersey?: number | null; injuryStatus?: string };
-  profile: PlayerProfile | null | undefined; className?: string; actions?: React.ReactNode;
+export function PlayerCardPanel({ player, profile, className, actions, compact }: {
+  player: { id: string; name: string; position: string; nflTeamId: string | null; jersey?: number | null; injuryStatus?: string; injuryNote?: string | null };
+  profile: PlayerProfile | null | undefined; className?: string; actions?: React.ReactNode; compact?: boolean;
 }) {
   const c = POS_COLOR[player.position] ?? POS_COLOR.K;
   const card = profile?.card;
@@ -102,15 +118,16 @@ export function PlayerCardPanel({ player, profile, className, actions }: {
     <div className={cx('overflow-hidden rounded-card text-white shadow-lg', className)} style={{ background: `linear-gradient(150deg, ${c.from} 0%, #0B1220 70%)` }}>
       <div className="relative flex items-end gap-3 px-4 pt-4">
         <div className="absolute right-3 top-3"><OvrBadge ovr={card?.ovr} size="lg" /></div>
-        <PlayerPhoto id={player.id} name={player.name} position={player.position} team={player.nflTeamId} size={88} src={profile?.headshot ?? null} className="ring-2 ring-white/20" />
+        <PlayerPhoto id={player.id} name={player.name} position={player.position} team={player.nflTeamId} size={compact ? 64 : 88} src={profile?.headshot ?? null} className="ring-2 ring-white/20" />
         <div className="min-w-0 pb-1 pr-16">
           <div className="text-[11px] font-semibold uppercase tracking-[.16em] text-white/60">{player.position} · {player.nflTeamId ?? 'FA'}{player.jersey ? ` · #${player.jersey}` : ''}</div>
-          <div className="font-display text-[26px] font-bold uppercase leading-[1.05] tracking-wide">{player.name}</div>
+          <div className={cx('font-display font-bold uppercase leading-[1.05] tracking-wide', compact ? 'text-[21px]' : 'text-[26px]')}>{player.name}</div>
+          {player.injuryStatus && player.injuryStatus !== 'healthy' && <div className="mt-1 flex items-center gap-1.5 text-[11.5px] text-white/80"><InjuryTag status={player.injuryStatus} />{player.injuryNote}</div>}
           {bioBits.length > 0 && <div className="mt-0.5 text-[12px] text-white/70">{bioBits.join(' · ')}</div>}
         </div>
       </div>
       {card && card.attrs.length > 0 ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pt-4">
+        <div className={cx('grid grid-cols-2 gap-x-4 px-4', compact ? 'gap-y-1.5 pt-3' : 'gap-y-2 pt-4')}>
           {card.attrs.map((a) => (
             <div key={a.k} title={a.detail}>
               <div className="flex items-baseline justify-between text-[11px]"><span className="font-semibold uppercase tracking-wider text-white/70">{a.label}</span><span className="num font-display text-[15px] font-bold">{a.v}</span></div>
@@ -121,18 +138,68 @@ export function PlayerCardPanel({ player, profile, className, actions }: {
         </div>
       ) : <p className="px-4 pt-4 text-[13px] text-white/70">{card?.basis ?? 'No ratings for this player yet.'}</p>}
       {card && card.line.length > 0 && (
-        <div className="mx-4 mt-4 rounded-lg bg-white/5 px-2 py-2">
+        <div className={cx('mx-4 rounded-lg bg-white/5 px-2 py-2', compact ? 'mt-3' : 'mt-4')}>
           <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-[.16em] text-white/50">{card.lineSeason} season</div>
           <div className="grid grid-cols-3 gap-y-2">
             {card.line.map((s) => <div key={s.k} className="px-1 text-center"><div className="num font-display text-[17px] font-bold leading-tight">{s.value}</div><div className="truncate text-[10px] uppercase tracking-wide text-white/55">{s.label}</div></div>)}
           </div>
         </div>
       )}
-      <div className="px-4 pb-3 pt-3 text-[11px] text-white/50">
+      {compact ? <div className="px-4 pb-3 pt-2 text-[10.5px] text-white/45">Gridiron ratings from real stats. Not EA Madden ratings.</div> : <div className="px-4 pb-3 pt-3 text-[11px] text-white/50">
         {bio?.college && <span>{bio.college}{bio.draft ? ' · ' : ''}</span>}{bio?.draft && <span>{bio.draft}</span>}
         <div className="mt-1">Gridiron ratings from real stats{card?.basis ? ` (${card.basis})` : ''}. Not EA Madden ratings.</div>
-      </div>
+      </div>}
       {actions && <div className="flex flex-wrap gap-2 border-t border-white/10 px-4 py-3">{actions}</div>}
+    </div>
+  );
+}
+
+const canHover = () => typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+
+/**
+ * Shows the player's stats card while the mouse rests on `children` (desktop only; on touch
+ * screens tapping keeps its normal behaviour). The card is fetched once and cached.
+ */
+export function PlayerHover({ playerId, children, className, disabled }: { playerId: string; children: ReactNode; className?: string; disabled?: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const timer = useRef<number>();
+  const show = () => { if (disabled || !canHover()) return; window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(true), 280); };
+  const hide = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 80); };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    return () => window.removeEventListener('scroll', close, true);
+  }, [open]);
+  return (
+    <span ref={ref} className={cx('inline-flex min-w-0 max-w-full', className)} onMouseEnter={show} onMouseLeave={hide} onMouseDown={() => { window.clearTimeout(timer.current); setOpen(false); }}>
+      {children}
+      {open && ref.current && createPortal(<HoverCard playerId={playerId} anchor={ref.current} />, document.body)}
+    </span>
+  );
+}
+
+function HoverCard({ playerId, anchor }: { playerId: string; anchor: HTMLElement }) {
+  const { data } = useCall<any>(['playerCard', playerId], 'players.card', { playerId }, { staleTime: 10 * 60_000 });
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const a = anchor.getBoundingClientRect();
+    const w = 330, h = box.current?.offsetHeight ?? 360, m = 10;
+    let left = a.right + m;
+    if (left + w > window.innerWidth - m) left = a.left - w - m;
+    if (left < m) left = Math.min(Math.max(m, a.left), window.innerWidth - w - m);
+    let top = a.top + a.height / 2 - h / 2;
+    top = Math.min(Math.max(m, top), window.innerHeight - h - m);
+    setPos({ left, top });
+  }, [anchor, data]);
+  return (
+    <div ref={box} role="tooltip" className="pointer-events-none fixed z-[80] w-[330px] animate-slideUp" style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}>
+      {data ? <PlayerCardPanel compact player={data} profile={data.profile} /> : (
+        <div className="rounded-card bg-[#0B1220] p-4 text-[13px] text-white/70 shadow-lg">Loading stats…</div>
+      )}
     </div>
   );
 }

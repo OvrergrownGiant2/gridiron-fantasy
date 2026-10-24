@@ -488,4 +488,18 @@ CREATE TABLE app_kv (
     id: '002_player_profiles',
     sql: `ALTER TABLE nfl_players ADD COLUMN IF NOT EXISTS profile jsonb;`,
   },
+  {
+    // Audit entries stay append-only, but a deleted league may detach them (league_id → NULL)
+    // so the history survives the league. Any other change is still rejected.
+    id: '003_audit_survives_league_delete',
+    sql: `CREATE OR REPLACE FUNCTION audit_log_immutable() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.league_id IS NOT NULL AND NEW.league_id IS NULL
+     AND (to_jsonb(NEW) - 'league_id') = (to_jsonb(OLD) - 'league_id') THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'audit_log is append-only';
+END;
+$$ LANGUAGE plpgsql;`,
+  },
 ];

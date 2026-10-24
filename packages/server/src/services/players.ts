@@ -1,6 +1,6 @@
 import { scoreStatLine, type Position, type StatLine } from '@gridiron/core';
 import { z } from 'zod';
-import { notFound, type Actor, type App } from '../app';
+import { forbidden, notFound, type Actor, type App } from '../app';
 import { getLeague, getScoringRules, requirePermission } from './common';
 import { byeWeeks, teamGameMap } from './nfl';
 import { availability } from './rosters';
@@ -142,4 +142,12 @@ export async function playerMeta(app: App, _actor: Actor) {
   const out: Record<string, [string | null, number | null]> = {};
   for (const r of rows) out[r.id] = [r.h, r.o];
   return out;
+}
+
+/** One player's photo, ratings card and status, for hover cards. Signed-in users only. */
+export async function playerCard(app: App, actor: Actor, input: { playerId: string }) {
+  if (actor.kind !== 'user') throw forbidden();
+  const p = await app.db.one<any>('SELECT id, full_name, position, nfl_team_id, jersey, injury_status, injury_note, profile FROM nfl_players WHERE id = $1', [String(input?.playerId ?? '')]);
+  if (!p) throw notFound('Player');
+  return { id: p.id, name: p.full_name, position: p.position, nflTeamId: p.nfl_team_id, jersey: p.jersey, injuryStatus: p.injury_status, injuryNote: p.injury_note, profile: p.profile ?? null };
 }

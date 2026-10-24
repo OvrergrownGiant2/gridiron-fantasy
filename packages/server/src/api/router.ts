@@ -64,6 +64,7 @@ export const routes: Record<string, Route> = {
   'players.search': read((app, a, i) => players.searchPlayers(app, a, i)),
   'players.profile': read((app, a, i) => players.playerProfile(app, a, i)),
   'players.meta': read((app, a) => players.playerMeta(app, a)),
+  'players.card': read((app, a, i) => players.playerCard(app, a, i)),
   'drafts.finishForMe': r((app, a, i) => drafts.finishForMe(app, a, i)),
 
   'drafts.get': read((app, a, i) => drafts.getDraft(app, a, i)),

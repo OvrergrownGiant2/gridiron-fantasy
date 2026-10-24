@@ -2,6 +2,7 @@ import { ImagePlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { Avatar } from '../components/Shell';
+import { LeagueExitButtons } from '../components/LeagueExit';
 import { Badge, Button, Card, ConfirmDialog, ErrorNote, Field, Input, PageHeader, SectionTitle, Segmented, Select, Toggle, useToast } from '../components/ui';
 import { browserTimeZone, dateTime, relative, setUserTimeZone } from '../lib/format';
 import { useAction, useCall, useDataStatus, useMe } from '../lib/hooks';
@@ -85,6 +86,7 @@ export function Settings({ resetDemo }: { resetDemo?: () => Promise<void> }) {
         </form>
         {pwErr && <div className="mt-3"><ErrorNote error={pwErr} /></div>}
       </Card>
+      <MyLeagues />
       <Card>
         <SectionTitle>Data & services</SectionTitle>
         {status && (
@@ -103,5 +105,29 @@ export function Settings({ resetDemo }: { resetDemo?: () => Promise<void> }) {
       </Card>
       <ConfirmDialog open={confirmReset} onClose={() => setConfirmReset(false)} danger title="Reset all demo data?" confirmLabel="Reset" body="All local demo data will be deleted and rebuilt. This cannot be undone." onConfirm={() => resetDemo?.()} />
     </div>
+  );
+}
+
+/** Every league you're in, with Leave and (as commissioner) Delete. */
+function MyLeagues() {
+  const { data } = useCall<any[]>(['leagues', 'mine'], 'leagues.mine', {});
+  if (!data) return null;
+  return (
+    <Card>
+      <SectionTitle sub="Leave a league and an AI manager takes over your team. A league with no people left is deleted.">Your leagues</SectionTitle>
+      {data.length === 0 ? <p className="text-[13px] text-muted">You're not in any leagues.</p> : (
+        <div className="divide-y divide-line">
+          {data.map((l) => (
+            <div key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold">{l.name}</div>
+                <div className="text-[12px] text-muted">{l.team_name ?? 'Observer'} · {l.role.replace('_', '-')} · {l.people} {l.people === 1 ? 'person' : 'people'}, {l.team_count} team{l.team_count === 1 ? '' : 's'}</div>
+              </div>
+              <LeagueExitButtons size="sm" league={{ id: l.id, name: l.name, role: l.role, people: l.people, teamName: l.team_name }} />
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }

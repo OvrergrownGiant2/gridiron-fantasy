@@ -49,8 +49,22 @@ jobs:
         continue-on-error: true   # if nflverse is unreachable, publish with the last saved snapshot
         run: npm run refresh:data
 
+      # Player photos are downloaded once and kept between runs, then served by the site itself.
+      - name: Restore player photos
+        uses: actions/cache@v4
+        with:
+          path: packages/web/public-demo/headshots
+          key: headshots-v1-${{ github.run_id }}
+          restore-keys: headshots-v1-
+
+      - name: Download player photos
+        continue-on-error: true   # without them the app falls back to NFL.com images, then initials
+        run: npm run fetch:headshots
+
       - name: Build the app
         run: npm run build:demo
+        env:
+          LOCAL_HEADSHOTS: '1'
 
       # Saving the snapshot keeps a history and keeps the repository active, so GitHub
       # doesn't pause the 3-hourly schedule (it pauses schedules after 60 quiet days).
