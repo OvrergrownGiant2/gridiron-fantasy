@@ -1,0 +1,95 @@
+# Builds Gridiron Fantasy with the latest real NFL data (nflverse) and publishes it on GitHub Pages.
+# Runs on every push, every 3 hours, and on demand (Actions tab → "Publish app" → Run workflow).
+name: Publish app
+
+on:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # unpack the source on first run, save the daily data snapshot
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # First run after uploading: the source arrives as one archive (GitHub's web upload
+      # takes at most 100 files). Unpack it into the repository once.
+      - name: Unpack source (first run only)
+        if: hashFiles('gridiron-source.tar.gz') != ''
+        run: |
+          tar -xzf gridiron-source.tar.gz
+          git rm -q gridiron-source.tar.gz
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Unpack Gridiron Fantasy source"
+          git push
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Download the latest NFL data
+        id: data
+        continue-on-error: true   # if nflverse is unreachable, publish with the last saved snapshot
+        run: npm run refresh:data
+
+      - name: Build the app
+        run: npm run build:demo
+
+      # Saving the snapshot keeps a history and keeps the repository active, so GitHub
+      # doesn't pause the 3-hourly schedule (it pauses schedules after 60 quiet days).
+      - name: Save the data snapshot
+        if: steps.data.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          f=packages/web/public-demo/nfl-snapshot.json
+          # Only save when the data changed, not just the download time.
+          if node -e "const fs=require('fs'),cp=require('child_process');const strip=(t)=>{const j=JSON.parse(t);delete j.asOf;return JSON.stringify(j)};process.exit(strip(cp.execSync('git show HEAD:$f'))===strip(fs.readFileSync('$f'))?0:1)"; then echo "No new NFL data."; exit 0; fi
+          git add "$f"
+          git commit -q -m "NFL data snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull -q --rebase && git push
+
+      - name: Check that GitHub Pages is switched on
+        id: pages
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+
+      - name: Explain how to switch on GitHub Pages
+        if: steps.pages.outcome != 'success'
+        run: |
+          echo "::error::GitHub Pages is not switched on. Open Settings → Pages, set Source to 'GitHub Actions', then re-run this workflow."
+          echo "### One step left: switch on GitHub Pages" >> "$GITHUB_STEP_SUMMARY"
+          echo "Open **Settings → Pages**, set **Source** to **GitHub Actions**, then come back to **Actions → Publish app → Re-run all jobs**." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/web/dist-demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      - run: echo "### Gridiron Fantasy is live at ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
