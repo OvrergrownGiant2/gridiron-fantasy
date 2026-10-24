@@ -484,4 +484,8 @@ CREATE TABLE app_kv (
 );
 `,
   },
+  {
+    id: '002_player_profiles',
+    sql: `ALTER TABLE nfl_players ADD COLUMN IF NOT EXISTS profile jsonb;`,
+  },
 ];

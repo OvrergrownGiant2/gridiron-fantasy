@@ -94,8 +94,10 @@ export async function startDraft(app: App, actor: Actor, input: { leagueId: stri
     const teams = (await db.one<{ c: number }>('SELECT count(*)::int AS c FROM teams WHERE league_id = $1', [league.id]))!.c;
     if (teams !== d.team_order.length) throw badRequest('Teams changed since the draft was configured. Re-configure the draft order.');
     const now = app.clock.now();
+    const firstTeam = teamOnClock({ ...d, status: 'in_progress' as const });
+    const firstIsAi = d.type !== 'auction' && firstTeam ? (await db.one<{ is_ai: boolean }>('SELECT is_ai FROM teams WHERE id = $1', [firstTeam]))?.is_ai : false;
     await db.query("UPDATE drafts SET status = 'in_progress', started_at = $2, pick_deadline = $3, auction_state = $4 WHERE id = $1",
-      [d.id, now.toISOString(), new Date(now.getTime() + d.pick_seconds * 1000).toISOString(),
+      [d.id, now.toISOString(), new Date(now.getTime() + (firstIsAi ? AI_THINK_MS : d.pick_seconds * 1000)).toISOString(),
         d.type === 'auction' ? JSON.stringify({ phase: 'nominating', nominatorIndex: 0, playerId: null, highBid: 0, highTeamId: null, endsAt: null, bids: [] }) : null]);
     if (d.type === 'auction') for (const t of d.team_order) await db.query('INSERT INTO auction_budgets (draft_id, team_id, remaining) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [d.id, t, d.auction_budget]);
     await db.query("UPDATE leagues SET status = 'drafting' WHERE id = $1", [league.id]);
@@ -160,7 +162,7 @@ export async function getDraft(app: App, actor: Actor, input: { leagueId: string
   };
 }
 
-export async function draftAvailable(app: App, actor: Actor, input: { leagueId: string; draftId: string; q?: string; position?: string; nflTeam?: string; limit?: number }) {
+export async function draftAvailable(app: App, actor: Actor, input: { leagueId: string; draftId: string; q?: string; position?: string; nflTeam?: string; limit?: number; sort?: 'rank' | 'ovr' }) {
   await requirePermission(app.db, actor, input.leagueId, 'league.view');
   const d = await app.db.one<DraftRow>('SELECT * FROM drafts WHERE id = $1 AND league_id = $2', [input.draftId, input.leagueId]);
   if (!d) throw notFound('Draft');
@@ -172,7 +174,7 @@ export async function draftAvailable(app: App, actor: Actor, input: { leagueId: 
   if (input.position) { params.push(input.position); where.push(`p.position = $${params.length}`); }
   if (input.nflTeam) { params.push(input.nflTeam); where.push(`p.nfl_team_id = $${params.length}`); }
   params.push(Math.min(300, input.limit ?? 150));
-  return app.db.query(`SELECT p.id, p.full_name, p.position, p.nfl_team_id, p.rank, p.injury_status FROM nfl_players p WHERE ${where.join(' AND ')} ORDER BY p.rank, p.id LIMIT $${params.length}`, params);
+  return app.db.query(`SELECT p.id, p.full_name, p.position, p.nfl_team_id, p.rank, p.injury_status, p.jersey, p.profile FROM nfl_players p WHERE ${where.join(' AND ')} ORDER BY ${input.sort === 'ovr' ? "(p.profile->'card'->>'ovr')::int DESC NULLS LAST, " : ''}p.rank, p.id LIMIT $${params.length}`, params);
 }
 
 export async function setQueue(app: App, actor: Actor, input: { leagueId: string; draftId: string; playerIds: string[] }) {
@@ -509,4 +511,40 @@ export async function autoDraftAll(app: App, actor: Actor, input: { leagueId: st
   await audit(app.db, { leagueId: league.id, actor, action: 'draft.auto_all' });
   app.bus.publish(`league:${league.id}`, { type: 'draft', leagueId: league.id });
   return { ok: true };
+}
+
+/**
+ * "Finish my draft": auto-picks the rest of the draft using the caller's queue, rankings and
+ * roster needs. Allowed only when every other team is an AI (solo and vs-AI leagues), so a
+ * person can never draft on behalf of other people.
+ */
+export async function finishForMe(app: App, actor: Actor, input: { leagueId: string; draftId?: string }) {
+  if (actor.kind !== 'user') throw forbidden();
+  await requirePermission(app.db, actor, input.leagueId, 'league.view');
+  const d0 = input.draftId
+    ? await app.db.one<DraftRow>('SELECT * FROM drafts WHERE id = $1 AND league_id = $2', [input.draftId, input.leagueId])
+    : await app.db.one<DraftRow>('SELECT * FROM drafts WHERE league_id = $1 AND NOT is_mock', [input.leagueId]);
+  if (!d0) throw notFound('Draft');
+  if (d0.type === 'auction') throw badRequest('Auction drafts cannot be finished automatically.');
+  if (d0.is_mock ? d0.mock_user_id !== actor.userId : false) throw notFound('Draft');
+  const humans = await app.db.query<{ owner_user_id: string | null }>('SELECT owner_user_id FROM teams WHERE league_id = $1 AND NOT is_ai', [input.leagueId]);
+  if (!d0.is_mock && humans.some((h) => h.owner_user_id !== actor.userId)) throw forbidden('Other people are drafting in this league, so only the commissioner can auto-draft (before the draft starts).');
+  let picks = 0;
+  for (let guard = 0; guard < 400; guard++) {
+    const done = await withTx(app, async (db) => {
+      const d = await lockDraft(db, d0.id);
+      if (d.status !== 'in_progress' || d.current_pick > totalPicks(d)) return true;
+      const league = await getLeague(db, d.league_id);
+      const teamId = teamOnClock(d)!;
+      const playerId = await autoPickFor(app, db, league, d, teamId);
+      await recordPick(app, db, league, d, teamId, playerId, { auto: true, madeBy: null });
+      await advance(app, db, league, d);
+      picks++;
+      return false;
+    });
+    if (done) break;
+  }
+  if (!d0.is_mock) await audit(app.db, { leagueId: input.leagueId, actor, action: 'draft.finish_for_me', target: d0.id, payload: { picks } });
+  publishLeague(app, app.db, input.leagueId, 'draft', {});
+  return { picks };
 }

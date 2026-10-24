@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { defaultLeagueSettings, scoringPreset } from '@gridiron/core';
+import { buildTemplate, defaultLeagueSettings, scoringPreset } from '@gridiron/core';
 import { expectError, mkUser, setTime, setupApp, type TestCtx } from './helpers';
 import * as auth from '../src/services/auth';
 import * as leagues from '../src/services/leagues';
@@ -274,6 +274,52 @@ describe('10–14. draft, scoring, matchups and standings', () => {
     expect(changed.some((x, i) => x.home_points !== before[i].home_points)).toBe(true);
     const log = await social.auditLog(ctx.app, owner.actor, { leagueId });
     expect(log.find((x: any) => x.action === 'scores.recalculate')?.reason).toBe('Apply new scoring retroactively');
+  });
+});
+
+describe('template drafts: you pick every player', () => {
+  it('a solo High Score Challenge draft is drafted pick by pick by the player and completes the season setup', async () => {
+    setTime(ctx, '2026-09-01T12:00:00Z');
+    const u = await mkUser(ctx.app);
+    const t = buildTemplate('solo', { currentWeek: 1, scoring: 'ppr' });
+    const l = await leagues.createLeague(ctx.app, u.actor, { name: 'Solo draft', teamName: 'Me', teamCount: t.teamCount, aiTeams: t.aiTeams, settings: t.settings, scoringPreset: t.scoringPreset });
+    await drafts.configureDraft(ctx.app, u.actor, { leagueId: l.id });
+    await drafts.startDraft(ctx.app, u.actor, { leagueId: l.id });
+    let st = await drafts.getDraft(ctx.app, u.actor, { leagueId: l.id });
+    const total = st.draft!.totalPicks;
+    expect(total).toBe(15);
+    for (let i = 1; i <= total; i++) {
+      const pool = await drafts.draftAvailable(ctx.app, u.actor, { leagueId: l.id, draftId: st.draft!.id, limit: 300 });
+      // follow positional needs the way a person would: one K and one DST, at the end
+      const pick = i === total - 1 ? pool.find((x: any) => x.position === 'K') : i === total ? pool.find((x: any) => x.position === 'DST') : pool.find((x: any) => x.position !== 'K' && x.position !== 'DST');
+      await drafts.makePick(ctx.app, u.actor, { leagueId: l.id, draftId: st.draft!.id, playerId: pick!.id, expectedPick: i });
+    }
+    st = await drafts.getDraft(ctx.app, u.actor, { leagueId: l.id });
+    expect(st.draft!.status).toBe('complete');
+    expect(st.picks!.every((p: any) => !p.is_auto)).toBe(true);
+    const lg = await ctx.app.db.one<{ status: string }>('SELECT status FROM leagues WHERE id = $1', [l.id]);
+    expect(lg!.status).toBe('in_season');
+  });
+
+  it('a duel against an AI is a live draft; "finish for me" completes it, but never on behalf of other people', async () => {
+    setTime(ctx, '2026-09-01T12:00:00Z');
+    const u = await mkUser(ctx.app);
+    const t = buildTemplate('duel', { currentWeek: 1, scoring: 'ppr', opponent: 'ai' });
+    expect(t.settings.draft.pickSeconds).toBe(300);
+    const l = await leagues.createLeague(ctx.app, u.actor, { name: 'Duel draft', teamName: 'Me', teamCount: t.teamCount, aiTeams: t.aiTeams, settings: t.settings, scoringPreset: t.scoringPreset });
+    await drafts.configureDraft(ctx.app, u.actor, { leagueId: l.id });
+    await drafts.startDraft(ctx.app, u.actor, { leagueId: l.id });
+    const r = await drafts.finishForMe(ctx.app, u.actor, { leagueId: l.id });
+    expect(r.picks).toBe(30);
+    expect((await drafts.getDraft(ctx.app, u.actor, { leagueId: l.id })).draft!.status).toBe('complete');
+
+    const friendLeague = buildTemplate('duel', { currentWeek: 1, scoring: 'ppr', opponent: 'friend' });
+    const l2 = await leagues.createLeague(ctx.app, u.actor, { name: 'Friend duel', teamName: 'Me', teamCount: 2, aiTeams: 0, settings: friendLeague.settings, scoringPreset: 'ppr' });
+    const friend = await mkUser(ctx.app);
+    await leagues.joinLeague(ctx.app, friend.actor, { inviteCode: l2.inviteCode, teamName: 'Pal' });
+    await drafts.configureDraft(ctx.app, u.actor, { leagueId: l2.id });
+    await drafts.startDraft(ctx.app, u.actor, { leagueId: l2.id });
+    await expectError(drafts.finishForMe(ctx.app, u.actor, { leagueId: l2.id }), 403, /Other people/);
   });
 });
 

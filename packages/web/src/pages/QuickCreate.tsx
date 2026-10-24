@@ -22,7 +22,7 @@ export function QuickCreate() {
   const [teamCount, setTeamCount] = useState(8);
   const [fillWithAi, setFillWithAi] = useState(false);
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-  const [startNow, setStartNow] = useState(true);
+  const [draftMode, setDraftMode] = useState<'live' | 'auto'>('live');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<any>(null);
   const { data: status } = useDataStatus();
@@ -32,7 +32,8 @@ export function QuickCreate() {
 
   useEffect(() => { if (tpl) setName(TEMPLATE_INFO[tpl].defaultName); setErr(null); }, [tpl]);
   const result = useMemo(() => tpl ? buildTemplate(tpl, { currentWeek: status?.week ?? 1, scoring, opponent, teamCount, fillWithAi, difficulty }) : null, [tpl, status?.week, scoring, opponent, teamCount, fillWithAi, difficulty]);
-  const autoStart = Boolean(result?.canStartImmediately && startNow);
+  const autoStart = Boolean(result?.canStartImmediately && draftMode === 'auto');
+  const liveStart = Boolean(result?.canStartImmediately && draftMode === 'live');
 
   const create = async () => {
     if (!tpl || !result) return;
@@ -50,6 +51,13 @@ export function QuickCreate() {
         await qc.invalidateQueries();
         toast('good', 'Your roster is drafted and the season schedule is set.');
         nav(`/league/${r.id}/team`);
+      } else if (liveStart) {
+        // Everyone else is an AI: open the draft room straight away. You make every one of your picks.
+        await api().call('drafts.configure', { leagueId: r.id });
+        await api().call('drafts.start', { leagueId: r.id });
+        await qc.invalidateQueries();
+        toast('good', tpl === 'solo' ? 'Your draft is open: pick every player on your roster.' : "The draft is live. You're picking against AI managers.");
+        nav(`/league/${r.id}/draft`);
       } else {
         await qc.invalidateQueries();
         toast('good', `League created. Invite code: ${r.inviteCode}`);
@@ -100,7 +108,10 @@ export function QuickCreate() {
             <div className="mt-3"><Field label="AI difficulty"><Segmented value={difficulty} onChange={setDifficulty} options={[{ value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' }]} /></Field></div>
           ) : null}
           {result.canStartImmediately && (
-            <div className="mt-3 rounded-lg bg-raised px-3 py-1"><Toggle label="Start right away: draft my roster automatically" checked={startNow} onChange={setStartNow} /></div>
+            <div className="mt-4"><Field label="Draft">
+              <Segmented value={draftMode} onChange={setDraftMode} options={[{ value: 'live', label: 'I pick every player' }, { value: 'auto', label: 'Auto-draft for me' }]} />
+            </Field>
+            <p className="mt-1.5 text-[12px] text-muted">{draftMode === 'live' ? (tpl === 'solo' ? `You draft every roster spot yourself, one pick at a time, with photos, ratings and stats for every player.` : 'A live snake draft against the AI managers. You see photos, ratings and stats for every player as you pick.') : 'Your roster is built instantly from rankings and positional needs.'}</p></div>
           )}
 
           <div className="mt-5 rounded-xl bg-raised p-4">
@@ -108,7 +119,7 @@ export function QuickCreate() {
             <ul className="grid gap-1.5 text-[13px] sm:grid-cols-2">
               {result.summary.map((s) => <li key={s} className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-good" />{s}</li>)}
               <li className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-good" />{scoring === 'ppr' ? 'Full PPR' : scoring === 'half_ppr' ? 'Half-PPR' : 'Standard'} scoring · QB, 2 RB, 2 WR, TE, FLEX, K, DST + 6 bench</li>
-              <li className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-good" />{autoStart ? 'Roster drafted for you instantly' : result.teamCount > 1 && result.aiTeams < result.teamCount - 1 ? 'Live draft once friends join' : 'Draft room ready'}</li>
+              <li className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-good" />{autoStart ? 'Roster drafted for you instantly' : liveStart ? (tpl === 'solo' ? 'Full draft: you pick every player' : 'Live snake draft vs AI, starts now') : 'Live draft once friends join, every manager picks their own team'}</li>
             </ul>
             {status?.provider?.snapshotAsOf && (
               <p className="mt-3 text-[12px] text-muted">This copy uses a data snapshot from {String(status.provider.snapshotAsOf).slice(0, 10)}. New leagues start with the next NFL week, which gets results only after the snapshot is refreshed.</p>
@@ -118,7 +129,7 @@ export function QuickCreate() {
           {err && <div className="mt-4"><ErrorNote error={err} /></div>}
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
             <Link to="/leagues/new/advanced" className="text-[13px] font-semibold text-muted hover:text-ink">Need custom rules? Advanced setup</Link>
-            <Button variant="primary" size="lg" loading={busy} onClick={create}>{autoStart ? 'Create and start' : 'Create league'}</Button>
+            <Button variant="primary" size="lg" loading={busy} onClick={create}>{autoStart ? 'Create and start' : liveStart ? 'Create and draft' : 'Create league'}</Button>
           </div>
         </Card>
       )}

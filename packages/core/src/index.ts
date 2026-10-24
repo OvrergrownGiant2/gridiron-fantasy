@@ -13,3 +13,4 @@ export * from './permissions';
 export * from './util';
 export * from './ai';
 export * from './templates';
+export * from './ratings';

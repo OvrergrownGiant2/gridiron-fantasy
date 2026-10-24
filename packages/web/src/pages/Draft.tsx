@@ -1,9 +1,10 @@
-import { ArrowDown, ArrowUp, Bot, Gavel, Grid3x3, ListOrdered, Pause, Play, Plus, Shuffle, Timer, Undo2, X, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, FastForward, Gavel, Grid3x3, ListOrdered, Pause, Play, Plus, Shuffle, Timer, Undo2, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { PlayerName } from '../components/PlayerModal';
+import { OvrBadge, PlayerCardPanel, PlayerPhoto, TopAttrs, usePlayerMeta } from '../components/PlayerCard';
+import { InjuryTag, Modal } from '../components/ui';
 import { TeamChip, TeamLogo } from '../components/team';
 import { Badge, Button, Card, ConfirmDialog, Empty, ErrorNote, Field, Input, LoadingBlock, PageHeader, SectionTitle, Segmented, Select, Tabs, cx, useToast } from '../components/ui';
 import { teamMap, useAction, useCall, useLeague } from '../lib/hooks';
@@ -125,8 +126,13 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
   const [nflTeam, setNflTeam] = useState('');
   const [view, setView] = useState<'players' | 'board' | 'team'>('players');
   const [undo, setUndo] = useState(false);
+  const [sort, setSort] = useState<'rank' | 'ovr'>('rank');
+  const [selId, setSelId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const meta = usePlayerMeta();
   const left = useCountdown(d.status === 'in_progress' ? (d.type === 'auction' ? (d.auction?.phase === 'bidding' ? d.auction.endsAt : d.pickDeadline) : d.pickDeadline) : null, data.serverNow);
-  const { data: avail } = useCall<any[]>(['draftAvailable', d.id, q, pos, nflTeam, data.picks.length], 'drafts.available', { leagueId: L.league.id, draftId: d.id, q: q || undefined, position: pos || undefined, nflTeam: nflTeam || undefined, limit: 120 }, { enabled: d.status !== 'complete' });
+  const { data: avail } = useCall<any[]>(['draftAvailable', d.id, q, pos, nflTeam, sort, data.picks.length], 'drafts.available', { leagueId: L.league.id, draftId: d.id, q: q || undefined, position: pos || undefined, nflTeam: nflTeam || undefined, limit: 120, sort }, { enabled: d.status !== 'complete' });
   const canControl = !mock && L.permissions.includes('draft.control');
   const myTurn = d.onClockTeamId && d.onClockTeamId === data.myTeamId;
   const onClock = d.onClockTeamId ? tm.get(d.onClockTeamId) : null;
@@ -138,6 +144,26 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
     catch (e: any) { toast('bad', e.message); qc.invalidateQueries({ queryKey: ['draft'] }); }
   };
   const myPicks = data.picks.filter((p: any) => p.team_id === data.myTeamId);
+  // Only offered when nobody else is a person, so no one drafts on another person's behalf.
+  const othersAllAi = L.teams.every((t: any) => t.id === data.myTeamId || t.is_ai);
+  const canFinish = Boolean(data.myTeamId) && d.type !== 'auction' && d.status === 'in_progress' && (mock || othersAllAi);
+  const finish = async () => {
+    setFinishing(true);
+    try { const r = await api().call<any>('drafts.finishForMe', { leagueId: L.league.id, draftId: d.id }); toast('good', `${r.picks} picks made for you.`); await qc.invalidateQueries(); }
+    catch (e: any) { toast('bad', e.message); } finally { setFinishing(false); }
+  };
+  const list: any[] = avail ?? [];
+  const sel = list.find((p) => p.id === selId) ?? list[0] ?? null;
+  const canPick = (myTurn || (canControl && !mock)) && d.status === 'in_progress' && d.type !== 'auction';
+  const choose = (p: any) => { setSelId(p.id); if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) setSheet(true); };
+  const pickAndClose = async (id: string) => { await pick(id); setSheet(false); setSelId(null); };
+  const selActions = sel && (
+    <>
+      {canPick && <Button variant="primary" icon={<Check className="h-4 w-4" />} onClick={() => pickAndClose(sel.id)}>{myTurn ? `Draft ${sel.full_name.split(' ').slice(-1)[0]}` : 'Pick for team'}</Button>}
+      {!queueIds.includes(sel.id) && data.myTeamId && <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setQueue.mutate({ leagueId: L.league.id, draftId: d.id, playerIds: [...queueIds, sel.id] })}>Queue</Button>}
+      {d.type === 'auction' && d.auction?.phase === 'nominating' && (d.auction.nominatorTeamId === data.myTeamId || canControl) && <Button variant="primary" onClick={() => api().call('drafts.nominate', { leagueId: L.league.id, draftId: d.id, playerId: sel.id, openingBid: 1 }).then(() => { qc.invalidateQueries({ queryKey: ['draft'] }); setSheet(false); }).catch((e) => toast('bad', e.message))}>Nominate $1</Button>}
+    </>
+  );
   const recent = [...data.picks].reverse().slice(0, 12);
   const upcoming = useMemo(() => {
     if (d.type === 'auction') return [];
@@ -176,6 +202,7 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
               <Button variant="secondary" size="sm" icon={d.status === 'paused' ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />} onClick={() => pause.mutate({ leagueId: L.league.id, paused: d.status !== 'paused' })}>{d.status === 'paused' ? 'Resume' : 'Pause'}</Button>
               <Button variant="secondary" size="sm" icon={<Undo2 className="h-4 w-4" />} disabled={!data.picks.length} onClick={() => setUndo(true)}>Undo</Button>
             </>}
+            {canFinish && <Button variant="secondary" size="sm" icon={<FastForward className="h-4 w-4" />} loading={finishing} onClick={finish}>Finish for me</Button>}
             {mock && <Button variant="secondary" size="sm" icon={<X className="h-4 w-4" />} onClick={onExitMock}>Leave mock</Button>}
           </div>
         </div>
@@ -188,31 +215,44 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
       {d.type === 'auction' && <AuctionPanel L={L} data={data} tm={tm} left={left} />}
       <Tabs value={view} onChange={setView} tabs={[{ value: 'players', label: 'Players' }, { value: 'board', label: 'Draft board' }, { value: 'team', label: `My picks (${myPicks.length})` }]} />
       {view === 'players' && (
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
           <Card pad={false} className="min-w-0">
             <div className="flex flex-wrap gap-2 border-b border-line p-3">
               <Input aria-label="Search available players" className="min-w-[160px] flex-1" placeholder="Search available players" value={q} onChange={(e) => setQ(e.target.value)} />
               <Select aria-label="NFL team" className="h-10 w-auto" value={nflTeam} onChange={(e) => setNflTeam(e.target.value)}><option value="">All teams</option>{NFL_TEAM_IDS.map((t) => <option key={t} value={t}>{t}</option>)}</Select>
+              <Segmented size="sm" value={sort} onChange={setSort} options={[{ value: 'rank', label: 'Rank' }, { value: 'ovr', label: 'OVR' }]} />
               <Segmented size="sm" value={pos || 'ALL'} onChange={(v) => setPos(v === 'ALL' ? '' : v)} options={['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'].map((p) => ({ value: p, label: p }))} />
             </div>
-            <div className="max-h-[560px] overflow-y-auto">
-              {(avail ?? []).map((p: any) => (
-                <div key={p.id} className="flex items-center gap-3 border-b border-line px-3 py-2 last:border-0">
-                  <span className="num w-9 text-right text-[12px] text-faint">{p.rank}</span>
-                  <div className="min-w-0 flex-1"><PlayerName leagueId={L.league.id} id={p.id} name={p.full_name} injury={p.injury_status} /><div className="text-[12px] text-muted">{p.position} · {p.nfl_team_id}</div></div>
-                  {!queueIds.includes(p.id) && data.myTeamId && <Button size="sm" variant="ghost" aria-label={`Queue ${p.full_name}`} onClick={() => setQueue.mutate({ leagueId: L.league.id, draftId: d.id, playerIds: [...queueIds, p.id] })}><Plus className="h-4 w-4" /></Button>}
-                  {d.type !== 'auction' && (myTurn || (canControl && d.type === 'manual') || (canControl && !mock)) && d.status === 'in_progress' && <Button size="sm" variant={myTurn ? 'primary' : 'secondary'} onClick={() => pick(p.id)}>{myTurn ? 'Draft' : 'Pick for team'}</Button>}
-                  {d.type === 'auction' && d.auction?.phase === 'nominating' && (d.auction.nominatorTeamId === data.myTeamId || canControl) && <Button size="sm" variant="primary" onClick={() => api().call('drafts.nominate', { leagueId: L.league.id, draftId: d.id, playerId: p.id, openingBid: 1 }).then(() => qc.invalidateQueries({ queryKey: ['draft'] })).catch((e) => toast('bad', e.message))}>Nominate $1</Button>}
-                </div>
-              ))}
+            <div className="max-h-[640px] overflow-y-auto" role="listbox" aria-label="Available players">
+              {list.map((p: any) => {
+                const on = sel?.id === p.id;
+                const line = p.profile?.card?.line ?? [];
+                return (
+                  <div key={p.id} role="option" aria-selected={on} tabIndex={0} onClick={() => choose(p)} onKeyDown={(e) => { if (e.key === 'Enter') choose(p); }}
+                    className={cx('flex cursor-pointer items-center gap-2.5 border-b border-line px-3 py-2 transition last:border-0 hover:bg-raised sm:gap-3', on && 'bg-raised shadow-[inset_3px_0_0_rgb(var(--accent))]')}>
+                    <span className="num hidden w-7 text-right text-[12px] text-faint sm:block">{p.rank}</span>
+                    <PlayerPhoto id={p.id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={40} src={p.profile?.headshot ?? null} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5"><span className="truncate font-semibold">{p.full_name}</span>{p.injury_status && p.injury_status !== 'healthy' && <InjuryTag status={p.injury_status} />}</div>
+                      <div className="flex items-center gap-2 text-[12px] text-muted"><span className="shrink-0">{p.position} · {p.nfl_team_id ?? 'FA'}</span>
+                        <span className="hidden truncate text-faint md:inline">{line.slice(1, 4).map((x: any) => `${x.value} ${x.label.toLowerCase()}`).join(' · ')}</span></div>
+                    </div>
+                    <span className="hidden sm:block"><TopAttrs profile={p.profile} /></span>
+                    <OvrBadge ovr={p.profile?.card?.ovr} />
+                    {canPick && <Button size="sm" variant={myTurn ? 'primary' : 'secondary'} className="hidden sm:inline-flex" onClick={(e) => { e.stopPropagation(); pick(p.id); }}>{myTurn ? 'Draft' : 'Pick'}</Button>}
+                  </div>
+                );
+              })}
+              {list.length === 0 && <p className="p-4 text-[13px] text-muted">No available players match.</p>}
             </div>
           </Card>
           <div className="space-y-4">
+            {sel && <div className="hidden lg:block"><PlayerCardPanel player={{ id: sel.id, name: sel.full_name, position: sel.position, nflTeamId: sel.nfl_team_id, jersey: sel.jersey }} profile={sel.profile} actions={selActions} /></div>}
             <Card pad={false}>
               <div className="label border-b border-line px-3 py-2">Your queue</div>
-              {data.queue.length === 0 ? <p className="px-3 py-3 text-[13px] text-muted">Add players with + to auto-pick them if your timer runs out.</p> : data.queue.map((x: any, i: number) => (
+              {data.queue.length === 0 ? <p className="px-3 py-3 text-[13px] text-muted">Queue players to auto-pick them if your timer runs out.</p> : data.queue.map((x: any, i: number) => (
                 <div key={x.player_id} className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[13px] last:border-0">
-                  <span className="num w-4 text-faint">{i + 1}</span><span className="min-w-0 flex-1 truncate"><b>{x.full_name}</b> <span className="text-muted">{x.position}</span></span>
+                  <span className="num w-4 text-faint">{i + 1}</span><PlayerPhoto id={x.player_id} name={x.full_name} position={x.position} team={x.nfl_team_id} size={24} /><span className="min-w-0 flex-1 truncate"><b>{x.full_name}</b> <span className="text-muted">{x.position}</span></span>
                   <button aria-label="Remove from queue" className="text-faint hover:text-bad" onClick={() => setQueue.mutate({ leagueId: L.league.id, draftId: d.id, playerIds: queueIds.filter((id) => id !== x.player_id) })}><X className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
@@ -222,18 +262,23 @@ function DraftRoom({ L, data, mock, onExitMock }: { L: any; data: any; mock: boo
               {recent.length === 0 ? <p className="px-3 py-3 text-[13px] text-muted">No picks yet.</p> : recent.map((p: any) => (
                 <div key={p.overall} className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[13px] last:border-0 animate-slideUp">
                   <span className="num w-7 text-faint">{p.overall}</span><TeamLogo team={tm.get(p.team_id)} size={20} />
-                  <span className="min-w-0 flex-1 truncate"><b>{p.full_name}</b> <span className="text-muted">{p.position}{p.price ? ` · $${p.price}` : ''}</span></span>{p.is_auto && <Badge>auto</Badge>}
+                  <PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={24} />
+                  <span className="min-w-0 flex-1 truncate"><b>{p.full_name}</b> <span className="text-muted">{p.position}{p.price ? ` · $${p.price}` : ''}</span></span>
+                  <OvrBadge ovr={meta?.[p.player_id]?.[1]} size="sm" />{p.is_auto && <Badge>auto</Badge>}
                 </div>
               ))}
             </Card>
           </div>
+          <Modal open={sheet && Boolean(sel)} onClose={() => setSheet(false)} title={sel?.full_name ?? 'Player'}>
+            {sel && <PlayerCardPanel player={{ id: sel.id, name: sel.full_name, position: sel.position, nflTeamId: sel.nfl_team_id, jersey: sel.jersey }} profile={sel.profile} actions={selActions} />}
+          </Modal>
         </div>
       )}
       {view === 'board' && <Board d={d} picks={data.picks} tm={tm} />}
       {view === 'team' && (
         <Card pad={false}>
           {myPicks.length === 0 ? <p className="p-4 text-[13px] text-muted">You haven't drafted anyone yet.</p> : myPicks.map((p: any) => (
-            <div key={p.overall} className="flex items-center gap-3 border-b border-line px-4 py-2 text-[13px] last:border-0"><span className="num w-14 text-muted">R{p.round}·{p.pick_in_round}</span><b className="flex-1">{p.full_name}</b><span className="text-muted">{p.position} · {p.nfl_team_id}</span>{p.price ? <span className="num">${p.price}</span> : null}</div>
+            <div key={p.overall} className="flex items-center gap-3 border-b border-line px-4 py-2 text-[13px] last:border-0"><span className="num w-14 text-muted">R{p.round}·{p.pick_in_round}</span><PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={32} /><b className="min-w-0 flex-1 truncate">{p.full_name}</b><span className="text-muted">{p.position} · {p.nfl_team_id}</span>{p.price ? <span className="num">${p.price}</span> : null}<OvrBadge ovr={meta?.[p.player_id]?.[1]} size="sm" /></div>
           ))}
         </Card>
       )}
@@ -252,15 +297,15 @@ function Board({ d, picks, tm }: { d: any; picks: any[]; tm: Map<string, any> })
   const posTone: Record<string, string> = { QB: 'bg-[#E8D5F7] text-[#3B1A5A]', RB: 'bg-[#D3F0DE] text-[#0F4A2A]', WR: 'bg-[#D5E6FA] text-[#163C66]', TE: 'bg-[#FBE3C9] text-[#6A3A06]', K: 'bg-[#E5E7EB] text-[#374151]', DST: 'bg-[#F3D3D3] text-[#6B1717]' };
   return (
     <div className="scroll-x rounded-card bg-surface hairline">
-      <table className="text-[12px]" style={{ minWidth: n * 112 + 40 }}>
-        <thead><tr><th className="sticky left-0 bg-surface p-2" />{d.order.map((tid: string) => <th key={tid} className="w-28 p-2 text-left"><div className="flex items-center gap-1.5"><TeamLogo team={tm.get(tid)} size={20} /><span className="truncate">{tm.get(tid)?.abbrev}</span></div></th>)}</tr></thead>
+      <table className="text-[12px]" style={{ minWidth: n * 136 + 40 }}>
+        <thead><tr><th className="sticky left-0 bg-surface p-2" />{d.order.map((tid: string) => <th key={tid} className="w-[136px] p-2 text-left"><div className="flex items-center gap-1.5"><TeamLogo team={tm.get(tid)} size={20} /><span className="truncate">{tm.get(tid)?.abbrev}</span></div></th>)}</tr></thead>
         <tbody>
           {Array.from({ length: d.rounds }, (_, r) => (
             <tr key={r}>
               <td className="num sticky left-0 bg-surface p-2 font-display text-[14px] font-semibold text-muted">R{r + 1}</td>
               {d.order.map((tid: string) => {
                 const p: any = byPick.get(`${r + 1}:${tid}`);
-                return <td key={tid} className="p-1">{p ? <div className={cx('rounded-md px-1.5 py-1', posTone[p.position])}><div className="truncate font-semibold">{p.full_name}</div><div className="opacity-70">{p.position} · {p.nfl_team_id}</div></div> : <div className="h-[38px] rounded-md bg-sunken" />}</td>;
+                return <td key={tid} className="p-1">{p ? <div className={cx('flex items-center gap-1.5 rounded-md px-1.5 py-1', posTone[p.position])}><PlayerPhoto id={p.player_id} name={p.full_name} position={p.position} team={p.nfl_team_id} size={24} /><div className="min-w-0"><div className="truncate font-semibold">{p.full_name}</div><div className="opacity-70">{p.position} · {p.nfl_team_id}</div></div></div> : <div className="h-[38px] rounded-md bg-sunken" />}</td>;
               })}
             </tr>
           ))}

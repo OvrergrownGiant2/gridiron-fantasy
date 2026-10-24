@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeRatings, ratingTier,
   scoringPreset, scoreStatLine, statHash, round2,
   DEFAULT_ROSTER, validateRoster, optimizeLineup, hasRoomFor, eligibleSlots,
   teamIndexForPick, chooseAutoPick, maxAuctionBid, validateBid,
@@ -452,5 +453,25 @@ describe('quick-start league templates', () => {
     expect(big.settings.season.playoffTeams).toBe(4);
     expect(buildTemplate('league', { currentWeek: 1, scoring: 'ppr', teamCount: 3 }).settings.season.playoffTeams).toBe(0);
     expect(buildTemplate('league', { currentWeek: 16, scoring: 'ppr', teamCount: 8 }).settings.season.playoffTeams).toBe(0);
+  });
+});
+
+describe('player ratings from real stats', () => {
+  const qb = (id: string, cmp: number, yds: number, td: number, int: number) =>
+    ({ id, position: 'QB' as const, curSeason: 2026, prior: null, cur: { g: 7, att: 245, cmp, passYd: yds, passTd: td, int, rushYd: 70, ppr: yds / 25 + td * 4 - int * 2 } });
+  it('rates better production higher, on a 40–99 scale, and leaves players without games unrated', () => {
+    const players = [qb('ace', 175, 2100, 18, 2), qb('mid', 155, 1650, 10, 5), qb('low', 130, 1200, 5, 10),
+      { id: 'rookie', position: 'QB' as const, curSeason: 2026, cur: null, prior: null }];
+    const r = computeRatings(players);
+    const ace = r.get('ace')!, mid = r.get('mid')!, low = r.get('low')!;
+    expect(ace.ovr!).toBeGreaterThan(mid.ovr!);
+    expect(mid.ovr!).toBeGreaterThan(low.ovr!);
+    for (const c of [ace, mid, low]) { expect(c.ovr!).toBeGreaterThanOrEqual(40); expect(c.ovr!).toBeLessThanOrEqual(99); expect(c.attrs.length).toBeGreaterThan(3); }
+    // fewer interceptions is better: ball security is inverted
+    expect(ace.attrs.find((a) => a.k === 'SEC')!.v).toBeGreaterThan(low.attrs.find((a) => a.k === 'SEC')!.v);
+    expect(ace.line.find((x) => x.k === 'YDS')!.value).toBe('2,100');
+    expect(r.get('rookie')).toMatchObject({ ovr: null, attrs: [] });
+    expect(ratingTier(null)).toBe('none');
+    expect(computeRatings(players).get('ace')).toEqual(ace); // deterministic
   });
 });

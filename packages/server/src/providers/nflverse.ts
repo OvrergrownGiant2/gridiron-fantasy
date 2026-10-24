@@ -1,4 +1,4 @@
-import type { GameStatus, InjuryStatus, NflGame, NflPlayer, NflTeam, PlayerGameStat, Position, StatLine } from '@gridiron/core';
+import { computeRatings, scoreStatLine, scoringPreset, type GameStatus, type InjuryStatus, type NflGame, type NflPlayer, type NflTeam, type PlayerBio, type PlayerGameStat, type Position, type StatLine, type UsageLine } from '@gridiron/core';
 import type { Clock } from '../app';
 import { easternToUtc, NFL_TEAMS } from './demo';
 import { ProviderError, type NflProvider } from './provider';
@@ -105,6 +105,33 @@ function injuryFrom(report: string | undefined, rosterStatus: string): { status:
  * `priorSeasonStats` (last season's weekly stats) drives preseason-style draft ranks
  * so drafts are not based on hindsight from the current season.
  */
+/** Adds one weekly nflverse player row to season usage totals (for ratings). */
+function addUsage(acc: Map<string, UsageLine>, r: Record<string, string>) {
+  const u = acc.get(r.player_id) ?? { g: 0 };
+  const add = (k: keyof UsageLine, v: number) => { (u as any)[k] = ((u as any)[k] ?? 0) + v; };
+  u.g += 1;
+  add('cmp', n(r.completions)); add('att', n(r.attempts)); add('passYd', n(r.passing_yards)); add('passTd', n(r.passing_tds));
+  add('int', n(r.passing_interceptions)); add('sacked', n(r.sacks_suffered));
+  add('car', n(r.carries)); add('rushYd', n(r.rushing_yards)); add('rushTd', n(r.rushing_tds));
+  add('tgt', n(r.targets)); add('rec', n(r.receptions)); add('recYd', n(r.receiving_yards)); add('recTd', n(r.receiving_tds)); add('yac', n(r.receiving_yards_after_catch));
+  add('fumLost', n(r.sack_fumbles_lost) + n(r.rushing_fumbles_lost) + n(r.receiving_fumbles_lost));
+  add('fgm', n(r.fg_made)); add('fga', n(r.fg_att)); add('fg50', n(r.fg_made_50_59) + n(r.fg_made_60_));
+  u.fgLong = Math.max(u.fgLong ?? 0, n(r.fg_long));
+  add('xpm', n(r.pat_made)); add('xpa', n(r.pat_att)); add('ppr', n(r.fantasy_points_ppr));
+  acc.set(r.player_id, u);
+}
+
+function bioFrom(p: Record<string, string>, asOf: string): PlayerBio {
+  const num = (x: string) => (x && Number.isFinite(Number(x)) ? Number(x) : null);
+  let age: number | null = null;
+  if (p.birth_date) {
+    const b = Date.parse(p.birth_date), now = Date.parse(asOf);
+    if (Number.isFinite(b) && Number.isFinite(now)) age = Math.floor((now - b) / (365.2425 * 86_400_000));
+  }
+  const draft = p.draft_round && p.draft_year ? `${p.draft_year} · Round ${p.draft_round}, pick ${p.draft_pick}${p.draft_team ? ` (${team(p.draft_team)})` : ''}` : p.rookie_season ? `${p.rookie_season} · Undrafted` : null;
+  return { height: num(p.height), weight: num(p.weight), college: p.college_name ? p.college_name.split(';')[0].trim() : null, age, experience: num(p.years_of_experience), draft };
+}
+
 export function buildNflverseDataset(input: {
   season: number;
   players: string; games: string; playerStats: string; teamStats: string; injuries?: string; priorSeasonStats?: string;
@@ -138,8 +165,12 @@ export function buildNflverseDataset(input: {
 
   // Draft-style rank: last season's PPR points (rookies and newcomers after veterans).
   const prior = new Map<string, number>();
+  const priorUsage = new Map<string, UsageLine>();
+  const curUsage = new Map<string, UsageLine>();
+  for (const r of statsRows) addUsage(curUsage, r);
+  const bios = new Map<string, { headshot: string | null; bio: PlayerBio }>();
   if (input.priorSeasonStats) {
-    for (const r of parseCsv(input.priorSeasonStats)) if (r.season_type === 'REG') prior.set(r.player_id, (prior.get(r.player_id) ?? 0) + n(r.fantasy_points_ppr));
+    for (const r of parseCsv(input.priorSeasonStats)) if (r.season_type === 'REG') { prior.set(r.player_id, (prior.get(r.player_id) ?? 0) + n(r.fantasy_points_ppr)); addUsage(priorUsage, r); }
   }
   const currentTeam = new Map<string, { week: number; team: string }>();
   for (const r of statsRows) {
@@ -167,6 +198,7 @@ export function buildNflverseDataset(input: {
       injuryStatus: injury.status, injuryNote: injury.status !== 'healthy' ? (inj?.injury || injury.note) : null,
       active: true, rank: 0,
     });
+    bios.set(`nflverse:${p.gsis_id}`, { headshot: p.headshot || null, bio: bioFrom(p, input.asOf) });
   }
   const teamName = new Map(NFL_TEAMS.map((t) => [t.id, t]));
   for (const t of NFL_TEAMS) {
@@ -199,6 +231,28 @@ export function buildNflverseDataset(input: {
       const allowed = t === g.homeTeamId ? g.awayScore : g.homeScore;
       stats.push({ playerId: `nflverse:DST-${t}`, gameId: g.id, season, week: g.week, stats: mapNflverseDefense(r, opp, allowed), isFinal: true });
     }
+  }
+  // Madden-style ratings from real stats (this season, plus last season at half weight).
+  const dstUsage = new Map<string, UsageLine>();
+  const dstRules = scoringPreset('ppr');
+  for (const st of stats) {
+    if (!st.playerId.includes(':DST-')) continue;
+    const u = dstUsage.get(st.playerId) ?? { g: 0 };
+    const x = st.stats;
+    u.g += 1;
+    u.dSack = (u.dSack ?? 0) + (x.def_sack ?? 0); u.dInt = (u.dInt ?? 0) + (x.def_int ?? 0); u.dFr = (u.dFr ?? 0) + (x.def_fum_rec ?? 0);
+    u.dTd = (u.dTd ?? 0) + (x.def_td ?? 0) + (x.st_td ?? 0); u.ptsAllowed = (u.ptsAllowed ?? 0) + (x.def_pts_allowed ?? 0); u.ydsAllowed = (u.ydsAllowed ?? 0) + (x.def_yds_allowed ?? 0);
+    u.ppr = (u.ppr ?? 0) + scoreStatLine(x, dstRules, 'DST').total;
+    dstUsage.set(st.playerId, u);
+  }
+  const cards = computeRatings(players.map((p) => ({
+    id: p.id, position: p.position, curSeason: season,
+    cur: p.position === 'DST' ? dstUsage.get(p.id) ?? null : curUsage.get(p.providerPlayerId) ?? null,
+    prior: p.position === 'DST' ? null : priorUsage.get(p.providerPlayerId) ?? null,
+  })));
+  for (const p of players) {
+    const b = bios.get(p.id);
+    p.profile = { headshot: b?.headshot ?? null, bio: b?.bio ?? null, card: cards.get(p.id) ?? null };
   }
   return { source: 'nflverse', season, asOf: input.asOf, teams: NFL_TEAMS, players, games, stats };
 }

@@ -141,12 +141,12 @@ export async function syncReference(app: App): Promise<void> {
         [t.id, t.city, t.name, t.conference, t.division]);
     }
     for (const p of players) {
-      await db.query(`INSERT INTO nfl_players (id, provider, provider_player_id, full_name, position, nfl_team_id, jersey, injury_status, injury_note, active, rank, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
+      await db.query(`INSERT INTO nfl_players (id, provider, provider_player_id, full_name, position, nfl_team_id, jersey, injury_status, injury_note, active, rank, profile, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
         ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, position = EXCLUDED.position, nfl_team_id = EXCLUDED.nfl_team_id,
           jersey = EXCLUDED.jersey, injury_status = EXCLUDED.injury_status, injury_note = EXCLUDED.injury_note, active = EXCLUDED.active,
-          rank = EXCLUDED.rank, updated_at = now()`,
-        [p.id, p.provider, p.providerPlayerId, p.fullName, p.position, p.nflTeamId, p.jersey, p.injuryStatus, p.injuryNote, p.active, p.rank]);
+          rank = EXCLUDED.rank, profile = COALESCE(EXCLUDED.profile, nfl_players.profile), updated_at = now()`,
+        [p.id, p.provider, p.providerPlayerId, p.fullName, p.position, p.nflTeamId, p.jersey, p.injuryStatus, p.injuryNote, p.active, p.rank, p.profile ? JSON.stringify(p.profile) : null]);
     }
   });
   // Injury notifications for rostered players whose designation got worse or changed.

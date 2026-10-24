@@ -59,6 +59,8 @@ export interface NflPlayer {
   injuryNote: string | null;
   active: boolean;
   rank: number;          // pre-season / consensus rank for drafts (lower is better)
+  /** Photo, bio and stat-based ratings, when the provider has them. */
+  profile?: import('./ratings').PlayerProfile | null;
 }
 
 export interface NflGame {

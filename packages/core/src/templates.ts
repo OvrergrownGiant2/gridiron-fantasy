@@ -22,7 +22,7 @@ export interface TemplateResult {
   aiTeams: number;
   settings: LeagueSettings;
   scoringPreset: 'ppr' | 'half_ppr' | 'standard';
-  /** True when every opponent is an AI, so rosters can be drafted automatically right away. */
+  /** True when every opponent is an AI, so the draft can start right away (live or automatic). */
   canStartImmediately: boolean;
   summary: string[];
 }
@@ -72,6 +72,8 @@ export function buildTemplate(id: LeagueTemplateId, o: TemplateOptions): Templat
     fitSeason(s, o.currentWeek, 14, 0);
     s.trades = { ...s.trades, review: 'auto', analysisMode: 'advisory' };
     s.waivers = { ...s.waivers, mode: 'rolling', waiverPeriodHours: 24 };
+    // Against an AI, give the person time to study each pick; with a friend keep a brisk clock.
+    s.draft = { ...s.draft, pickSeconds: ai ? 300 : 90 };
     return {
       teamCount: 2, aiTeams: ai ? 1 : 0, settings: s, scoringPreset: o.scoring, canStartImmediately: ai,
       summary: [`${s.season.regularSeasonWeeks} weekly matchups`, 'Best record wins (points break ties)', 'Rolling waivers', ai ? `AI opponent (${difficulty})` : 'Invite one friend with a code'],
@@ -85,6 +87,7 @@ export function buildTemplate(id: LeagueTemplateId, o: TemplateOptions): Templat
   fitSeason(s, o.currentWeek, 14, playoffs);
   s.trades = { ...s.trades, review: fill ? 'auto' : 'hybrid', analysisMode: 'advisory' };
   s.waivers = { ...s.waivers, mode: 'faab', faabBudget: 100 };
+  if (fill) s.draft = { ...s.draft, pickSeconds: 300 };
   const p = s.season.playoffTeams;
   return {
     teamCount: n, aiTeams: fill ? n - 1 : 0, settings: s, scoringPreset: o.scoring, canStartImmediately: fill,

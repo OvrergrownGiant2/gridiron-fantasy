@@ -122,7 +122,7 @@ export async function playerProfile(app: App, actor: Actor, input: { leagueId: s
   const games = await teamGameMap(app.db, league.season, league.current_week);
   const g = pl.nfl_team_id ? games.get(pl.nfl_team_id) : null;
   return {
-    player: { id: pl.id, name: pl.full_name, position: pl.position, nflTeamId: pl.nfl_team_id, jersey: pl.jersey, injuryStatus: pl.injury_status, injuryNote: pl.injury_note, rank: pl.rank, provider: pl.provider, updatedAt: pl.updated_at },
+    player: { id: pl.id, name: pl.full_name, position: pl.position, nflTeamId: pl.nfl_team_id, jersey: pl.jersey, injuryStatus: pl.injury_status, injuryNote: pl.injury_note, rank: pl.rank, provider: pl.provider, updatedAt: pl.updated_at, profile: pl.profile ?? null },
     seasonPoints: Math.round(gameLog.reduce((a, x) => a + x.points, 0) * 100) / 100,
     totals, totalsBreakdown: scoreStatLine(totals, rules, pl.position).lines,
     gameLog, upcoming: upcoming.map((u) => ({ week: u.week, opponent: u.home_team_id === pl.nfl_team_id ? u.away_team_id : u.home_team_id, isHome: u.home_team_id === pl.nfl_team_id, kickoffAt: u.kickoff_at, status: u.status })),
@@ -130,4 +130,16 @@ export async function playerProfile(app: App, actor: Actor, input: { leagueId: s
     rosteredPct: (await rosteredPercent(app, [pl.id])).get(pl.id) ?? 0,
     thisWeekGame: g ? { status: g.status, kickoffAt: g.kickoff_at } : null,
   };
+}
+
+/**
+ * Compact photo + overall rating for every player, so any list can show them without
+ * each query joining profiles. Signed-in users only; the data is the same for everyone.
+ */
+export async function playerMeta(app: App, _actor: Actor) {
+  const rows = await app.db.query<{ id: string; h: string | null; o: number | null }>(
+    `SELECT id, profile->>'headshot' AS h, (profile->'card'->>'ovr')::int AS o FROM nfl_players WHERE active`);
+  const out: Record<string, [string | null, number | null]> = {};
+  for (const r of rows) out[r.id] = [r.h, r.o];
+  return out;
 }

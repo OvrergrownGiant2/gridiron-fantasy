@@ -2,6 +2,7 @@ import { STAT_LABELS } from '@gridiron/core';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { kickoff, pts } from '../lib/format';
 import { useCall } from '../lib/hooks';
+import { PlayerCardPanel, PlayerPhoto } from './PlayerCard';
 import { Badge, InjuryTag, LoadingBlock, Modal, cx } from './ui';
 
 const Ctx = createContext<(leagueId: string, playerId: string) => void>(() => {});
@@ -39,8 +40,8 @@ function PlayerModal({ leagueId, playerId, onClose }: { leagueId: string; player
     <Modal open onClose={onClose} wide title={p ? p.name : 'Player'}>
       {isLoading || !data ? <LoadingBlock /> : (
         <div className="space-y-5">
+          <PlayerCardPanel player={p} profile={p.profile} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <span className="font-display text-xl font-semibold">{p.position} · {p.nflTeamId ?? 'FA'}{p.jersey ? ` · #${p.jersey}` : ''}</span>
             {p.injuryStatus !== 'healthy' ? <Badge tone="bad">{p.injuryStatus}{p.injuryNote ? ` · ${p.injuryNote}` : ''}</Badge> : <Badge tone="good">Healthy</Badge>}
             {data.availability.status === 'rostered' ? <Badge tone="info">On {data.ownerTeam?.name}</Badge> : data.availability.status === 'waivers' ? <Badge tone="warn">On waivers</Badge> : <Badge tone="good">Free agent</Badge>}
             <span className="text-[13px] text-muted">Bye: week {data.byeWeek ?? '—'} · Rostered in {data.rosteredPct}% of leagues · Rank #{p.rank}</span>
@@ -98,10 +99,11 @@ function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: st
   return <div className="rounded-xl bg-raised p-3"><div className="label">{label}</div><div className="num font-display text-3xl font-bold">{value}</div>{sub && <div className="mt-1 text-[12px] text-muted">{sub}</div>}</div>;
 }
 
-export function PlayerName({ leagueId, id, name, injury, className }: { leagueId: string; id: string; name: string; injury?: string; className?: string }) {
+export function PlayerName({ leagueId, id, name, injury, className, position, team, photo = true, photoSize = 26 }: { leagueId: string; id: string; name: string; injury?: string; className?: string; position?: string; team?: string | null; photo?: boolean; photoSize?: number }) {
   const open = useOpenPlayer();
   return (
     <button type="button" onClick={() => open(leagueId, id)} className={cx('inline-flex max-w-full items-center gap-1.5 text-left font-semibold hover:text-accent hover:underline', className)}>
+      {photo && <PlayerPhoto id={id} name={name} position={position ?? (id.includes('DST-') ? 'DST' : undefined)} team={team ?? (id.includes('DST-') ? id.split('DST-')[1] : null)} size={photoSize} className="mr-0.5" />}
       <span className="truncate">{name}</span>{injury && <InjuryTag status={injury} />}
     </button>
   );
