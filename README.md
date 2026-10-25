@@ -2,6 +2,9 @@
 
 > **Website that updates itself:** this repository publishes the app on GitHub Pages and refreshes
 > the real NFL data every 3 hours with GitHub Actions. See [AUTOMATION.md](AUTOMATION.md).
+>
+> **Playing with friends on their own devices?** Put the online version up for free (Render + Neon):
+> see [ONLINE-SETUP.md](ONLINE-SETUP.md).
 
 A browser-based NFL fantasy football platform for leagues of 1–10 human managers, with any number of independent leagues per account, AI managers, a rule-based **Digital Commissioner**, live scoring from a pluggable NFL data provider, and a polished responsive UI.
 

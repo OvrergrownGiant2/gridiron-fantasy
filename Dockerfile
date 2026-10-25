@@ -16,4 +16,4 @@ COPY --from=build /app /app
 RUN npm prune --omit=dev --workspaces --include-workspace-root || true
 EXPOSE 8787
 USER node
-CMD ["npx", "tsx", "packages/server/src/main.ts"]
+CMD ["node", "--import", "tsx", "packages/server/src/main.ts"]

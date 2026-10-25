@@ -1,0 +1,23 @@
+# Render Blueprint: New → Blueprint → pick this repository. Render builds the Dockerfile and
+# asks for DATABASE_URL (paste your Neon connection string). Everything else is preset.
+services:
+  - type: web
+    name: gridiron-fantasy
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # Neon → Connection string (starts with postgresql://)
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384   # the free plan has 512 MB of memory
+      - key: TRUST_PROXY
+        value: "true"
+      - key: NFL_PROVIDER
+        value: nflverse      # real NFL data, refreshed after games
+      - key: SLEEPER_LIVE
+        value: "true"        # provisional in-game stats and injuries from Sleeper

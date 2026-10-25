@@ -25,7 +25,8 @@ export function readEnv(env: NodeJS.ProcessEnv = process.env): ServerEnv {
     allowDemoInProduction: env.ALLOW_DEMO_DATA === 'true',
     config: {
       mode,
-      publicUrl: (env.PUBLIC_URL ?? `http://localhost:${env.PORT ?? 8787}`).replace(/\/$/, ''),
+      // Render (and similar hosts) provide the public address automatically.
+      publicUrl: (env.PUBLIC_URL || env.RENDER_EXTERNAL_URL || `http://localhost:${env.PORT ?? 8787}`).replace(/\/$/, ''),
       sessionDays: Number(env.SESSION_DAYS ?? 30),
       aiProvider: aiKey ? { kind: 'anthropic', apiKey: aiKey, model: env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5' } : null,
     },
