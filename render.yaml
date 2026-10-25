@@ -8,6 +8,14 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
     autoDeploy: true
+    # Don't rebuild for the 3-hourly data snapshots, docs or workflows: the server fetches NFL
+    # data itself, and every rebuild uses Render's monthly free build minutes.
+    buildFilter:
+      ignoredPaths:
+        - packages/web/public-demo/**
+        - "**/*.md"
+        - .github/**
+        - e2e/**
     envVars:
       - key: DATABASE_URL
         sync: false          # Neon → Connection string (starts with postgresql://)
