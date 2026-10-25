@@ -50,6 +50,17 @@ describe('1. accounts and profiles', () => {
     expect(await auth.resolveSession(ctx.app, l.token)).toBeNull();
   });
 
+  it('saves a personal appearance to the account, validates it, and can reset it', async () => {
+    const u = await mkUser(ctx.app);
+    const look = { primary: '#0B4F6C', accent: '#2DD4BF', tint: 0.5, font: 'nunito', radius: 20, scale: 1.1, overrides: { dark: { bg: '#000000' } } };
+    const saved = await auth.updateProfile(ctx.app, u.userId, { appearance: look });
+    expect(saved.appearance).toEqual(look);
+    expect((await auth.getUser(ctx.app, u.userId))!.appearance).toEqual(look);
+    await expectError(auth.updateProfile(ctx.app, u.userId, { appearance: { primary: 'blue' } }), 400);
+    await expectError(auth.updateProfile(ctx.app, u.userId, { appearance: { overrides: { light: { bg: '#000000; color:red' } } } }), 400);
+    expect((await auth.updateProfile(ctx.app, u.userId, { appearance: null })).appearance).toBeNull();
+  });
+
   it('supports account recovery without revealing whether an email exists', async () => {
     const unknown = await auth.requestPasswordReset(ctx.app, { email: 'nobody@example.com' });
     const known = await auth.requestPasswordReset(ctx.app, { email: 'sam@example.com' });

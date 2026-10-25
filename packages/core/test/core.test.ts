@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeRatings, ratingTier,
+  appearanceSchema, appearanceCss, buildPalettes, paletteWarnings, DEFAULT_PALETTES,
   scoringPreset, scoreStatLine, statHash, round2,
   DEFAULT_ROSTER, validateRoster, optimizeLineup, hasRoomFor, eligibleSlots,
   teamIndexForPick, chooseAutoPick, maxAuctionBid, validateBid,
@@ -473,5 +474,39 @@ describe('player ratings from real stats', () => {
     expect(r.get('rookie')).toMatchObject({ ovr: null, attrs: [] });
     expect(ratingTier(null)).toBe('none');
     expect(computeRatings(players).get('ace')).toEqual(ace); // deterministic
+  });
+});
+
+describe('personal appearance', () => {
+  it('no choices keeps the stock look exactly', () => {
+    expect(buildPalettes({})).toEqual(DEFAULT_PALETTES);
+    expect(appearanceCss({})).toBe('');
+    expect(appearanceCss(null)).toBe('');
+  });
+  it('two colors restyle every surface and stay readable, even for awkward picks', () => {
+    for (const [primary, accent] of [['#0F1E3D', '#38BDF8'], ['#FFF5CC', '#FFFF00'], ['#000000', '#111111'], ['#FF0000', '#FFFFFF']]) {
+      const { light, dark } = buildPalettes({ primary, accent, tint: 0.6 });
+      expect(light.bg).not.toBe(DEFAULT_PALETTES.light.bg);
+      expect(paletteWarnings(light)).toEqual([]);
+      expect(paletteWarnings(dark)).toEqual([]);
+      expect(contrastRatio('#FFFFFF', light.turf)).toBeGreaterThanOrEqual(7);
+      expect(contrastRatio(light.accent, '#FFFFFF')).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(dark.accent, dark.bg)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+  it('fine-tuned colors win, fonts/corners/size are applied, and bad input is rejected', () => {
+    const a = { primary: '#2E1065', overrides: { light: { ink: '#330000' } }, font: 'inter' as const, radius: 4, scale: 1.1 };
+    expect(buildPalettes(a).light.ink).toBe('#330000');
+    const css = appearanceCss(a);
+    expect(css).toContain('--ink: 51 0 0;');
+    expect(css).toContain('--radius: 4px;');
+    expect(css).toContain('--ui-scale: 1.1;');
+    expect(css).toContain('Inter');
+    expect(appearanceSchema.safeParse({ primary: 'red' }).success).toBe(false);
+    expect(appearanceSchema.safeParse({ overrides: { light: { nope: '#000000' } } }).success).toBe(false);
+    expect(appearanceSchema.safeParse({ scale: 3 }).success).toBe(false);
+    expect(appearanceSchema.safeParse({ hack: 'x' }).success).toBe(false);
+    // the CSS can only ever contain validated values
+    expect(appearanceSchema.safeParse({ primary: '#000000; } body { display:none' }).success).toBe(false);
   });
 });

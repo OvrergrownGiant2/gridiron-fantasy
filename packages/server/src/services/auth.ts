@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { appearanceSchema, type Appearance } from '@gridiron/core';
 import { AppError, badRequest, conflict, unauthorized, type App } from '../app';
 import { isUniqueViolation } from '../db/db';
 import { NOTIFICATION_KINDS } from './common';
@@ -11,14 +12,14 @@ export const emailSchema = z.string().trim().email('Enter a valid email address.
 
 export interface PublicUser {
   id: string; username: string; displayName: string; email: string; avatarMediaId: string | null;
-  timezone: string | null; theme: 'system' | 'light' | 'dark'; notificationPrefs: Record<string, boolean>; createdAt: string;
+  timezone: string | null; theme: 'system' | 'light' | 'dark'; notificationPrefs: Record<string, boolean>; appearance: Appearance | null; createdAt: string;
 }
 
 function toPublic(r: any): PublicUser {
   return {
     id: r.id, username: r.username, displayName: r.display_name, email: r.email, avatarMediaId: r.avatar_media_id,
     timezone: r.timezone, theme: r.theme, notificationPrefs: { ...Object.fromEntries(Object.keys(NOTIFICATION_KINDS).map((k) => [k, true])), ...(r.notification_prefs ?? {}) },
-    createdAt: r.created_at,
+    appearance: r.appearance ?? null, createdAt: r.created_at,
   };
 }
 
@@ -94,6 +95,8 @@ const profileSchema = z.object({
   theme: z.enum(['system', 'light', 'dark']).optional(),
   avatarMediaId: z.string().uuid().nullable().optional(),
   notificationPrefs: z.record(z.enum(Object.keys(NOTIFICATION_KINDS) as [string, ...string[]]), z.boolean()).optional(),
+  /** Personal colors, fonts, corners and size; null restores the stock look. */
+  appearance: appearanceSchema.nullable().optional(),
 });
 
 export async function updateProfile(app: App, userId: string, input: unknown) {
@@ -113,6 +116,7 @@ export async function updateProfile(app: App, userId: string, input: unknown) {
   if (p.theme !== undefined) add('theme', p.theme);
   if (p.avatarMediaId !== undefined) add('avatar_media_id', p.avatarMediaId);
   if (p.notificationPrefs !== undefined) add('notification_prefs', JSON.stringify(p.notificationPrefs));
+  if (p.appearance !== undefined) add('appearance', p.appearance === null ? null : JSON.stringify(p.appearance));
   if (sets.length) await app.db.query(`UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, vals);
   return getUser(app, userId);
 }

@@ -502,4 +502,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;`,
   },
+  {
+    id: '004_user_appearance',
+    sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS appearance jsonb;`,
+  },
 ];

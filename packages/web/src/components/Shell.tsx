@@ -191,8 +191,8 @@ export function Shell({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <div className="flex h-full">
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 lg:block">{sidebar()}</aside>
+    <div className="flex min-h-full">
+      <aside className="h-screen-ui sticky top-0 hidden w-64 shrink-0 lg:block">{sidebar()}</aside>
       {drawer && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-black/50" onClick={() => setDrawer(false)} />

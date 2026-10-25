@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { Avatar } from '../components/Shell';
 import { LeagueExitButtons } from '../components/LeagueExit';
+import { Personalize } from '../components/Personalize';
 import { Badge, Button, Card, ConfirmDialog, ErrorNote, Field, Input, PageHeader, SectionTitle, Segmented, Select, Toggle, useToast } from '../components/ui';
 import { browserTimeZone, dateTime, relative, setUserTimeZone } from '../lib/format';
 import { useAction, useCall, useDataStatus, useMe } from '../lib/hooks';
@@ -68,6 +69,7 @@ export function Settings({ resetDemo }: { resetDemo?: () => Promise<void> }) {
           </Field>
         </div>
       </Card>
+      <Personalize saved={u.appearance ?? null} />
       <Card>
         <SectionTitle sub="Choose which events create notifications.">Notifications</SectionTitle>
         <div className="grid gap-x-8 sm:grid-cols-2">

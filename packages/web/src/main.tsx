@@ -7,6 +7,9 @@ import { createHttpTransport } from './api/http';
 import { Logo } from './components/Shell';
 import { ToastProvider } from './components/ui';
 import './styles.css';
+import { applyCachedAppearance } from './theme';
+
+applyCachedAppearance();
 
 declare const __DEMO__: boolean;
 

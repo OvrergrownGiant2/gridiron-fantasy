@@ -20,15 +20,15 @@ import { Settings } from './pages/Settings';
 import { Chat, Notifications } from './pages/Social';
 import { Trades } from './pages/Trades';
 import { Waivers } from './pages/Waivers';
-import { applyTheme } from './theme';
+import { applyAppearance, applyTheme } from './theme';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { data, isLoading } = useMe();
   const loc = useLocation();
   useLiveEvents(Boolean(data?.user));
   useEffect(() => {
-    if (data?.user) { applyTheme(data.user.theme); setUserTimeZone(data.user.timezone); }
-  }, [data?.user?.theme, data?.user?.timezone]);
+    if (data?.user) { applyTheme(data.user.theme); applyAppearance(data.user.appearance ?? null); setUserTimeZone(data.user.timezone); }
+  }, [data?.user?.theme, data?.user?.timezone, JSON.stringify(data?.user?.appearance ?? null)]);
   if (isLoading) return <div className="gutter mx-auto max-w-3xl py-10"><LoadingBlock rows={5} /></div>;
   if (!data?.user) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname)}`} replace />;
   return <PlayerModalProvider><Shell>{children}</Shell></PlayerModalProvider>;

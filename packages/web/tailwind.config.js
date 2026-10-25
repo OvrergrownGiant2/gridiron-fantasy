@@ -11,11 +11,12 @@ export default {
         live: v('live'), good: v('good'), warn: v('warn'), bad: v('bad'), info: v('info'),
       },
       fontFamily: {
-        display: ['"Barlow Condensed"', '"Arial Narrow"', 'system-ui', 'sans-serif'],
-        sans: ['Archivo', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        display: ['var(--font-display)'],
+        sans: ['var(--font-sans)'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
-      borderRadius: { card: '14px' },
+      // Corner roundness follows the user's setting (--radius, 14px by default → md 6, lg 8, xl 12).
+      borderRadius: { card: 'var(--radius)', md: 'calc(var(--radius) * 0.43)', lg: 'calc(var(--radius) * 0.57)', xl: 'calc(var(--radius) * 0.86)', '2xl': 'calc(var(--radius) * 1.14)' },
       keyframes: {
         pulseDot: { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.35 } },
         bump: { '0%': { transform: 'scale(1)' }, '40%': { transform: 'scale(1.12)' }, '100%': { transform: 'scale(1)' } },
