@@ -50,14 +50,18 @@ jobs:
         run: npm run refresh:data
 
       # Player photos are downloaded once and kept between runs, then served by the site itself.
-      - name: Restore player photos
+      - name: Restore player photos and team logos
         uses: actions/cache@v4
         with:
-          path: packages/web/public-demo/headshots
-          key: headshots-v1-${{ github.run_id }}
-          restore-keys: headshots-v1-
+          path: |
+            packages/web/public-demo/headshots
+            packages/web/public-demo/team-logos
+          key: headshots-v2-${{ github.run_id }}
+          restore-keys: |
+            headshots-v2-
+            headshots-v1-
 
-      - name: Download player photos
+      - name: Download player photos and team logos
         continue-on-error: true   # without them the app falls back to NFL.com images, then initials
         run: npm run fetch:headshots
 

@@ -50,7 +50,7 @@ export async function nflScoreboard(app: App, actor: Actor, input: { week?: numb
   const week = input.week ?? currentWeek;
   const available = status.health !== 'unconfigured' && status.health !== 'never_synced';
   // Relevant performances: the viewer's rostered players in the selected league, grouped by NFL team.
-  const myPlayers: Record<string, { name: string; position: string; points: number; starter: boolean }[]> = {};
+  const myPlayers: Record<string, { playerId: string; name: string; position: string; points: number; starter: boolean }[]> = {};
   if (input.leagueId) {
     try {
       await requirePermission(app.db, actor, input.leagueId, 'league.view');
@@ -60,7 +60,7 @@ export async function nflScoreboard(app: App, actor: Actor, input: { week?: numb
         const sc = await teamWeekScore(app.db, league, team.id, week, { now: app.clock.now() });
         for (const p of [...sc.starters, ...sc.bench]) {
           if (!p.nflTeamId) continue;
-          (myPlayers[p.nflTeamId] ??= []).push({ name: p.name, position: p.position, points: p.points, starter: p.slot !== 'BN' && p.slot !== 'IR' });
+          (myPlayers[p.nflTeamId] ??= []).push({ playerId: p.playerId, name: p.name, position: p.position, points: p.points, starter: p.slot !== 'BN' && p.slot !== 'IR' });
         }
       }
     } catch { /* not a member: omit */ }

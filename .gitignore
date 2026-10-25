@@ -6,3 +6,4 @@ dist-demo
 artifact-build
 e2e/screenshots
 packages/web/public-demo/headshots
+packages/web/public-demo/team-logos

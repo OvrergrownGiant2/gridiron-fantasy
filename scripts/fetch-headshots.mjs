@@ -1,3 +1,5 @@
+// Also downloads the 32 NFL team logos (URLs from packages/web/src/lib/nflTeams.ts) into
+// packages/web/public-demo/team-logos/<TEAM>.png.
 // Downloads every player's headshot (from the NFL's image CDN, via nflverse URLs) into
 // packages/web/public-demo/headshots/<id>.jpg so the website serves the photos itself.
 // Already-downloaded photos are skipped. Writes headshots/report.json with the results.
@@ -43,6 +45,21 @@ async function worker() {
   }
 }
 await Promise.all(Array.from({ length: 12 }, worker));
+// Team logos: a 160px copy from the CDN's resizer, falling back to the original.
+const logoDir = 'packages/web/public-demo/team-logos';
+mkdirSync(logoDir, { recursive: true });
+const teams = [...readFileSync('packages/web/src/lib/nflTeams.ts', 'utf8').matchAll(/^\s+([A-Z]{2,3}): \{.*logo: '([^']+)'/gm)];
+report.logos = { total: teams.length, downloaded: 0, cached: 0, failed: 0 };
+await Promise.all(teams.map(async ([, id, url]) => {
+  const file = `${logoDir}/${id}.png`;
+  if (existsSync(file)) { report.logos.cached++; return; }
+  const path = new URL(url).pathname;
+  try {
+    let buf;
+    try { buf = await get(`https://a.espncdn.com/combiner/i?img=${path}&w=160&h=160`); } catch { buf = await get(url); }
+    writeFileSync(file, buf); report.logos.downloaded++;
+  } catch { report.logos.failed++; }
+}));
 report.at = new Date().toISOString();
 writeFileSync(`${dir}/report.json`, JSON.stringify(report, null, 2));
-console.log(`headshots: ${report.total} players, ${report.cached} cached, ${report.downloaded} downloaded (${Math.round(report.bytes / 1024)} KB), ${report.failed} failed`, report.errors);
+console.log(`headshots: ${report.total} players, ${report.cached} cached, ${report.downloaded} downloaded (${Math.round(report.bytes / 1024)} KB), ${report.failed} failed`, report.errors, 'logos:', report.logos);

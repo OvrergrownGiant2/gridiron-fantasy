@@ -70,8 +70,23 @@ export function Dashboard() {
         {!board ? <LoadingBlock rows={2} /> : board.games.length === 0 ? (
           <Empty title="No games available" body={board.status?.message ?? 'Schedule data has not been loaded yet.'} />
         ) : (
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-            {[...board.games].sort((a: any, b: any) => order(a) - order(b) || Date.parse(a.kickoffAt) - Date.parse(b.kickoffAt)).map((g: any) => <GameCard key={g.id} g={g} myPlayers={board.myPlayers} />)}
+          <div className="space-y-6">
+            {GROUPS.map((grp) => {
+              const games = board.games.filter((g: any) => grp.match(g.display)).sort((a: any, b: any) => Date.parse(a.kickoffAt) - Date.parse(b.kickoffAt));
+              if (!games.length) return null;
+              return (
+                <div key={grp.key}>
+                  <div className="mb-2.5 flex items-center gap-2">
+                    {grp.key === 'live' && <span className="h-2 w-2 animate-pulse rounded-full bg-live" />}
+                    <span className="label">{grp.label}</span><span className="num text-[12px] text-faint">{games.length}</span>
+                    <span className="h-px flex-1 bg-line" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                    {games.map((g: any) => <GameCard key={g.id} g={g} myPlayers={board.myPlayers} />)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -79,7 +94,12 @@ export function Dashboard() {
   );
 }
 
-const order = (g: any) => ({ LIVE: 0, DELAYED: 1, UPCOMING: 2, FINAL: 3 } as any)[g.display] ?? 4;
+const GROUPS = [
+  { key: 'live', label: 'Live now', match: (d: string) => d === 'LIVE' || d === 'DELAYED' },
+  { key: 'upcoming', label: 'Upcoming', match: (d: string) => d === 'UPCOMING' },
+  { key: 'final', label: 'Final', match: (d: string) => d === 'FINAL' },
+  { key: 'other', label: 'Other', match: (d: string) => !['LIVE', 'DELAYED', 'UPCOMING', 'FINAL'].includes(d) },
+];
 
 function LeagueCard({ l }: { l: any }) {
   const team = { name: l.team_name ?? l.name, abbrev: l.abbrev, primary_color: l.primary_color, secondary_color: l.secondary_color, logo_media_id: l.team_logo_media_id, logo_preset: l.logo_preset };
