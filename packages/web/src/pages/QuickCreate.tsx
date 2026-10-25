@@ -104,6 +104,9 @@ export function QuickCreate() {
             )}
           </div>
           {tpl === 'league' && <div className="mt-2"><Toggle label="Fill the other seats with AI managers now" checked={fillWithAi} onChange={setFillWithAi} /></div>}
+          {api().mode === 'demo' && ((tpl === 'duel' && opponent === 'friend') || (tpl === 'league' && !fillWithAi)) && (
+            <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-[12.5px]"><b>Friends must join on this same device.</b> This version keeps leagues inside your browser, so invite codes don't work from other phones or computers. Choose AI opponents, or use the online version to play friends remotely.</p>
+          )}
           {(tpl === 'duel' && opponent === 'ai') || (tpl === 'league' && fillWithAi) ? (
             <div className="mt-3"><Field label="AI difficulty"><Segmented value={difficulty} onChange={setDifficulty} options={[{ value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' }]} /></Field></div>
           ) : null}

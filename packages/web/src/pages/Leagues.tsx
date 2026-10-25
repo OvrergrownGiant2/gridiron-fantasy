@@ -58,6 +58,11 @@ function JoinCard({ initialOpen, code: preset }: { initialOpen?: boolean; code?:
         <Field label="Your team name" htmlFor="join-team" hint="You can change it later."><Input id="join-team" value={teamName} onChange={(e) => setTeamName(e.target.value)} maxLength={40} /></Field>
         <Button type="submit" variant="primary" className="w-full" loading={join.isPending} disabled={code.length < 8} icon={<UserPlus className="h-4 w-4" />}>Join league</Button>
       </form>
+      {api().mode === 'demo' && (
+        <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-[12.5px] text-ink">
+          <b>Joining only works on the device where the league was created.</b> This version of Gridiron keeps every league inside the browser that made it, so a code from a friend's phone or computer can't be found here. To play with friends on their own devices, the app needs the online (server) version.
+        </p>
+      )}
     </Card>
   );
 }

@@ -2,6 +2,7 @@ import { STAT_LABELS } from '@gridiron/core';
 import { Copy, Crown, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { api } from '../api/client';
 import { Avatar } from '../components/Shell';
 import { RefreshLeagueButton } from '../components/RefreshLeague';
 import { LeagueExitButtons } from '../components/LeagueExit';
@@ -132,7 +133,7 @@ function Members({ L }: { L: any }) {
       <div className="space-y-4">
         {L.league.inviteCode && (
           <Card>
-            <SectionTitle sub="Anyone with this code can join while seats are open.">Invite</SectionTitle>
+            <SectionTitle sub={api().mode === 'demo' ? 'In this version, leagues live in this browser: the code works for other accounts on this same device only.' : 'Anyone with this code can join while seats are open.'}>Invite</SectionTitle>
             <div className="mb-2 rounded-lg bg-sunken px-3 py-2 text-center font-mono text-2xl font-bold tracking-[.3em]">{L.league.inviteCode}</div>
             <div className="break-all rounded-lg bg-raised px-3 py-2 font-mono text-[12px] text-muted">{link}</div>
             <Button size="sm" className="mt-2 w-full" icon={<Copy className="h-4 w-4" />} onClick={async () => { try { await navigator.clipboard.writeText(link); toast('good', 'Invite link copied.'); } catch { toast('info', 'Copy the link above manually.'); } }}>Copy invite link</Button>

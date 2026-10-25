@@ -74,7 +74,7 @@ function PreDraft({ L, draft, onMock }: { L: any; draft: any; onMock: (id: strin
           </ol>
           {open > 0 && (
             <div className="mt-3 rounded-lg bg-raised p-3 text-[13px]">
-              <p className="text-muted">{open} open seat{open === 1 ? '' : 's'}. Share this invite code with friends, or fill seats with AI managers.</p>
+              <p className="text-muted">{open} open seat{open === 1 ? '' : 's'}. {api().mode === 'demo' ? 'In this version the code only works for accounts on this same device; fill the other seats with AI managers.' : 'Share this invite code with friends, or fill seats with AI managers.'}</p>
               {L.league.inviteCode && <div className="mt-2 flex items-center gap-2"><span className="rounded-md bg-sunken px-3 py-1.5 font-mono text-lg font-bold tracking-[.25em]">{L.league.inviteCode}</span>
                 <Button size="sm" onClick={async () => { try { await navigator.clipboard.writeText(L.league.inviteCode); toast('good', 'Invite code copied.'); } catch { toast('info', 'Select the code to copy it.'); } }}>Copy</Button></div>}
             </div>
